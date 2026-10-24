@@ -9,9 +9,20 @@ namespace BuyOrDie
         public double price, prevClose, anchor, pendingGap, evStartLog, evTargetLog;
         public bool evActive, limitUp, limitDown;
         public int evElapsed, evDuration, status, statusDay;
+        // 신규 상장 종목 정의 (dyn일 때만 채움)
+        public bool dyn, ipoDay;
+        public int listedAt = -1, kind;
+        public string name, ticker, sector;
+        public double initPrice, sigma, beta;
     }
 
-    [Serializable] public class NewsSave { public int minute, tone, asset; public string headline; public bool breaking; }
+    [Serializable] public class NewsSave
+    {
+        public int id, minute, tone, asset, cat;
+        public string headline, source;
+        public bool breaking;
+        public double priceAt;
+    }
     [Serializable] public class ScheduledSave { public int minute, template, asset, duration; public double mag; public bool fired; }
     [Serializable] public class HoldingSave { public int asset; public double qty, avg; }
     [Serializable] public class PositionSave { public int id, asset, lev, openedAt; public bool isLong; public double entry, margin, qty, liq; }
@@ -28,7 +39,7 @@ namespace BuyOrDie
 
     [Serializable] public class SaveData
     {
-        public int version = 3;
+        public int version = 4;
         public string savedAt;
         public int minute, seed, day, selected;
         public double equity, dayStartEquity;
@@ -41,6 +52,9 @@ namespace BuyOrDie
         // 대폭락장 / 대호황장
         public int regime, regimeEnd, regimeStart = -1, regimePending, lastRegimeDay = -99, regimeWaveDay;
         public double volMult = 1;
+        // 신규 상장 예정, 뉴스 번호
+        public List<PendingIPO> ipos;
+        public int nextNewsId;
     }
 
     /// <summary>
@@ -118,6 +132,9 @@ namespace BuyOrDie
             get { if (music < 0) music = PlayerPrefs.GetFloat("set_music", 0.45f); return music; }
             set { music = value; PlayerPrefs.SetFloat("set_music", value); MusicPlayer.ApplyVolume(); }
         }
+
+        /// <summary>시세 갱신 주기(초). 기본 2초.</summary>
+        public static float TickSeconds { get { return PlayerPrefs.GetFloat("set_tick", 2f); } set { PlayerPrefs.SetFloat("set_tick", value); } }
 
         public static void Save() { PlayerPrefs.Save(); }
     }

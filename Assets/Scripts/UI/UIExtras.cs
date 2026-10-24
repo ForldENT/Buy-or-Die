@@ -174,6 +174,21 @@ namespace BuyOrDie
             sp.Select(si, false);
             y += 64;
 
+            Row(c, "시세 갱신", "가격이 바뀌는 간격 (1배속 기준)", y);
+            float[] ticks = { 1f, 2f, 3f };
+            int ti = 1;
+            for (int i = 0; i < ticks.Length; i++) if (Mathf.Abs(ticks[i] - Settings.TickSeconds) < 0.1f) ti = i;
+            var tk = new Segmented(c, new[] { "1초마다", "2초마다", "3초마다" }, cx, y, cw, 38, 13, i => Settings.TickSeconds = ticks[i]);
+            tk.Select(ti, false);
+            y += 64;
+
+            Row(c, "AI 학습", "내장 AI · 오프라인 · 무료", y);
+            var info = UI.Txt(c, "뉴스 " + (300 + AIMemory.Lines) + "건 · 종목 이름 " + (350 + AIMemory.Names) + "개를 학습했어요" +
+                Fmt.Colored("\n플레이할수록 새로 만든 뉴스와 종목 이름을 계속 배워요", Theme.Dim), 13, Theme.Sub);
+            info.textWrappingMode = TextWrappingModes.Normal;
+            info.rectTransform.At(cx, y - 2, cw, 44);
+            y += 64;
+
             Row(c, "뉴스 알림", "오른쪽 아래 팝업 알림", y);
             var al = new Segmented(c, new[] { "모든 속보", "보유 종목만", "끄기" }, cx, y, cw, 38, 13, i => Settings.NewsAlerts = i);
             al.Select(Mathf.Clamp(Settings.NewsAlerts, 0, 2), false);

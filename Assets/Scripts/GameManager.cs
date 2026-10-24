@@ -41,6 +41,15 @@ namespace BuyOrDie
 
         public int Speed { get { return Speeds[speedIndex]; } }
 
+        /// <summary>시세 갱신 주기(초, 1배속 기준). 이 간격마다 여러 분을 한꺼번에 진행하고 화면을 갱신한다.</summary>
+        public float TickSeconds { get { return Mathf.Clamp(Settings.TickSeconds, 0.5f, 5f); } }
+        /// <summary>다음 시세 갱신까지의 진행도 (0~1)</summary>
+        public float TickProgress { get { return Mathf.Clamp01(acc / TickSeconds); } }
+        /// <summary>한 번 갱신될 때 흐르는 게임 시간(분)</summary>
+        public int MinutesPerTick { get { return Mathf.Max(1, Mathf.RoundToInt(TickSeconds / Interval())); } }
+        /// <summary>화면 시계용: 갱신 사이에도 시계는 부드럽게 흐른다</summary>
+        public int DisplayMinute { get { return engine.minute + Mathf.Min(MinutesPerTick - 1, Mathf.FloorToInt(TickProgress * MinutesPerTick)); } }
+
         static readonly double[] RankAt = { 0, 5e6, 2e7, 5e7, 1.5e8, 4e8, 1e9 };
         static readonly string[] RankName = { "깡통 계좌", "개미", "불개미", "슈퍼개미", "큰손", "고래", "월가의 늑대" };
 
@@ -66,6 +75,7 @@ namespace BuyOrDie
             Application.runInBackground = true;
             sfx = Sfx.I;
             MusicPlayer.Play();
+            AIMemory.Init();
 
             bool loaded = false;
             if (GameLaunch.mode == LaunchMode.Load)
@@ -116,6 +126,7 @@ namespace BuyOrDie
             engine.PriceLimitHit += OnPriceLimit;
             engine.AssetDelisted += OnDelisted;
             engine.RegimeChanged += OnRegimeChanged;
+            engine.AssetListed += OnListed;
         }
 
         void NewMarket()
@@ -189,6 +200,7 @@ namespace BuyOrDie
             d.goalReached = goalReached;
             d.selected = selected != null ? selected.index : 0;
             SaveSystem.Save(d);
+            AIMemory.Save();
             SaveBest();
             if (announce)
             {
@@ -216,19 +228,19 @@ namespace BuyOrDie
             HandleKeys();
             if (state != GameState.Playing || Speed == 0 || ui.OverlayOpen || SceneFader.Busy) return;
 
+            // 시세는 TickSeconds(기본 2초)마다 한 번씩 바뀐다. 그 사이 흐른 게임 시간(분)을 한꺼번에 진행.
             acc += Time.unscaledDeltaTime * Speed;
-            int steps = 0;
-            while (steps < 80)
+            float tick = TickSeconds;
+            if (acc < tick) return;
+            acc -= tick;
+            if (acc > tick) acc = 0;
+            int minutes = MinutesPerTick;
+            for (int i = 0; i < minutes; i++)
             {
-                float interval = Interval();
-                if (acc < interval) break;
-                acc -= interval;
                 StepOnce();
-                steps++;
                 if (state != GameState.Playing || ui.OverlayOpen) { acc = 0; break; }
             }
-            if (steps >= 80) acc = 0;
-            if (steps > 0) ui.RefreshAll();
+            ui.RefreshAll();
         }
 
         void StepOnce()
@@ -367,6 +379,7 @@ namespace BuyOrDie
 
         void OnNews(NewsItem n)
         {
+            AIMemory.Observe(n);
             ui.OnNews(n);
             bool mine = n.asset != null && portfolio.Owns(n.asset);
             int mode = Settings.NewsAlerts;
@@ -416,6 +429,17 @@ namespace BuyOrDie
             if (!portfolio.Owns(a) && Settings.NewsAlerts != 0) return;
             Toast(up ? "상한가!" : "하한가!", a.name + (up ? " +30% 상한가 도달" : " -30% 하한가 도달"), up ? Theme.Up : Theme.Down);
         }
+
+        void OnListed(MarketAsset a)
+        {
+            AIMemory.ObserveListing(a);
+            ui.watchlist.Rebind();
+            if (Settings.NewsAlerts == 2) return;
+            sfx.News();
+            Toast("신규 상장", a.name + "(" + a.ticker + ") · " + a.KindLabel + " · " + a.sector + " — 첫날은 가격 제한이 없어요!", Theme.Accent);
+        }
+
+        public void OpenNews(NewsItem n) { ui.OpenNews(n); }
 
         void OnDelisted(MarketAsset a)
         {
@@ -483,7 +507,16 @@ namespace BuyOrDie
                 ui.TogglePauseMenu();
                 return;
             }
+            // 튜토리얼 중에도 종목 이동(↑↓)과 탭 전환(Tab)은 쓸 수 있게
+            if (ui.tutorial != null && ui.tutorial.Active)
+            {
+                if (kb.upArrowKey.wasPressedThisFrame) ui.watchlist.SelectRelative(-1);
+                if (kb.downArrowKey.wasPressedThisFrame) ui.watchlist.SelectRelative(1);
+                if (kb.tabKey.wasPressedThisFrame) { ui.watchlist.CycleTab(); ui.watchlist.SelectRelative(0); }
+                return;
+            }
             if (ui.OverlayOpen) return;
+            if (kb.nKey.wasPressedThisFrame) ui.OpenNews(null);
             if (kb.spaceKey.wasPressedThisFrame) SetSpeed(speedIndex == 0 ? Mathf.Clamp(Settings.DefaultSpeed, 1, 3) : 0);
             if (kb.digit1Key.wasPressedThisFrame) SetSpeed(1);
             if (kb.digit2Key.wasPressedThisFrame) SetSpeed(2);

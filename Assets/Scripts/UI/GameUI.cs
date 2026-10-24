@@ -42,6 +42,8 @@ namespace BuyOrDie
         // 작업표시줄
         readonly List<UIButton> speedBtns = new List<UIButton>();
         TextMeshProUGUI clockT, dayT;
+        Image tickFill;
+        int shownMinute = -1;
         UIButton soundBtn;
 
         // 티커
@@ -248,15 +250,17 @@ namespace BuyOrDie
             UI.Txt(app, "HTS 트레이딩", 13, Theme.Text, true, TextAlignmentOptions.Center).rectTransform.Fill();
             UI.Img("Active", app, Theme.Accent).rectTransform.Bottom(0, 2, 40, 40);
 
-            menuRT = UI.Rect("MenuButtons", bar).At(TaskbarH + 296, 5, 300, TaskbarH - 10);
+            menuRT = UI.Rect("MenuButtons", bar).At(TaskbarH + 296, 5, 376, TaskbarH - 10);
             var save = UI.GhostButton(menuRT, "저장", 13, () => gm.SaveGame(true), true);
             save.rectTransform().At(0, 0, 70, TaskbarH - 10);
             var hist = UI.GhostButton(menuRT, "내역", 13, OpenHistory, true);
             hist.rectTransform().At(76, 0, 70, TaskbarH - 10);
             var set = UI.GhostButton(menuRT, "설정", 13, OpenSettings, true);
             set.rectTransform().At(152, 0, 70, TaskbarH - 10);
+            var newsBtn = UI.GhostButton(menuRT, "뉴스", 13, () => OpenNews(null), true);
+            newsBtn.rectTransform().At(228, 0, 70, TaskbarH - 10);
             var menu = UI.GhostButton(menuRT, "메뉴", 13, OpenPauseMenu, true);
-            menu.rectTransform().At(228, 0, 70, TaskbarH - 10);
+            menu.rectTransform().At(304, 0, 70, TaskbarH - 10);
 
             float x = 18;
             var clock = UI.Rect("Clock", bar).AtRight(x, 0, 150, TaskbarH);
@@ -264,6 +268,13 @@ namespace BuyOrDie
             clockT.rectTransform.Top(5, 20);
             dayT = UI.Txt(clock, "", 11, Theme.Dim, false, TextAlignmentOptions.MidlineRight);
             dayT.rectTransform.Top(25, 16);
+            // 다음 시세 갱신까지 남은 시간 (얇은 막대)
+            var tickTrack = UI.Img("TickTrack", clock, Theme.LineSoft);
+            tickTrack.rectTransform.Bottom(3, 2, 60, 0);
+            tickFill = UI.Img("TickFill", tickTrack.transform, Theme.Accent);
+            tickFill.rectTransform.anchorMin = Vector2.zero;
+            tickFill.rectTransform.anchorMax = new Vector2(0, 1);
+            tickFill.rectTransform.offsetMin = tickFill.rectTransform.offsetMax = Vector2.zero;
             x += 150 + 14;
 
             soundBtn = UI.GhostButton(bar, "♪", 16, ToggleSound, true);
@@ -387,7 +398,7 @@ namespace BuyOrDie
             mktFill[2].color = Theme.Accent;
             mktFill[2].rectTransform.anchorMax = new Vector2(mod / 1440f, 1);
 
-            dateT.text = Fmt.Colored(Fmt.FullDate(e.minute), Theme.Sub) + "     " + Fmt.Clock(e.minute) + "     " + Fmt.Colored("DAY " + e.Day, Theme.Accent);
+            shownMinute = -1;   // 시계는 Update에서 매 프레임 부드럽게 갱신
         }
 
         void MarketRow(int i, AssetKind k, int openMod, int length)
@@ -421,8 +432,7 @@ namespace BuyOrDie
         public void RefreshTaskbar()
         {
             var e = gm.engine;
-            clockT.text = Fmt.Clock(e.minute);
-            dayT.text = Fmt.Date(e.minute) + "  ·  DAY " + e.Day;
+            shownMinute = -1;
             for (int i = 0; i < speedBtns.Count; i++)
             {
                 bool on = i == gm.speedIndex;
@@ -504,8 +514,23 @@ namespace BuyOrDie
 
         public void Shake() { shakeT = 0.35f; }
 
+        void UpdateClock()
+        {
+            if (gm == null || gm.engine == null) return;
+            if (tickFill != null) tickFill.rectTransform.anchorMax = new Vector2(gm.Speed == 0 ? 0 : gm.TickProgress, 1);
+            int m = gm.state == GameState.Playing ? gm.DisplayMinute : gm.engine.minute;
+            if (m == shownMinute) return;
+            shownMinute = m;
+            var e = gm.engine;
+            int day = m / 1440 - MarketEngine.FirstDayIndex + 1;
+            clockT.text = Fmt.Clock(m);
+            dayT.text = Fmt.Date(m) + "  ·  DAY " + day;
+            dateT.text = Fmt.Colored(Fmt.FullDate(m), Theme.Sub) + "     " + Fmt.Clock(m) + "     " + Fmt.Colored("DAY " + day, Theme.Accent);
+        }
+
         void Update()
         {
+            UpdateClock();
             float dt = Time.unscaledDeltaTime;
 
             if (tickerT != null)
@@ -615,6 +640,18 @@ namespace BuyOrDie
             toastRoot.SetAsLastSibling();
             Shake();
             RefreshTaskbar();
+        }
+
+        public void OpenNews(NewsItem focus)
+        {
+            if (modalCount > 0 || pauseMenu != null || overlay != null || (tutorial != null && tutorial.Active)) return;
+            modalCount++;
+            NewsWindow.Open(root, gm, focus, () =>
+            {
+                modalCount--;
+                lastModalCloseFrame = Time.frameCount;
+                RefreshAll();
+            });
         }
 
         public void OpenHistory()

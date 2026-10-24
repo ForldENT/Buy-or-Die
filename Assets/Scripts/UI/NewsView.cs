@@ -28,9 +28,11 @@ namespace BuyOrDie
         public void Build(RectTransform area, GameManager gm)
         {
             this.gm = gm;
-            UI.Txt(area, "뉴스 · 공시", 14, Theme.Text, true).rectTransform.At(18, 0, 200, 44);
-            counter = UI.Txt(area, "", 11, Theme.Dim, false, TextAlignmentOptions.MidlineRight);
-            counter.rectTransform.AtRight(82, 13, 150, 18);
+            counter = UI.Txt(area, "", 14, Theme.Text, true);
+            counter.rectTransform.At(18, 0, 200, 44);
+            var all = UI.Button(area, "전체 보기  ›", 12, () => gm.OpenNews(null),
+                Theme.A(Theme.PanelHi, 0), Theme.PanelHi, Theme.PanelHi2, Theme.Sub, true);
+            all.rectTransform().AtRight(80, 8, 96, 28);
             liveDot = UI.Img("Live", area, Theme.Live);
             liveDot.rectTransform.AtRight(58, 19, 6, 6);
             UI.Txt(area, "LIVE", 11, Theme.Live, true).rectTransform.AtRight(18, 13, 36, 18);
@@ -58,7 +60,7 @@ namespace BuyOrDie
             r.head.lineSpacing = 4;
             r.head.rectTransform.Top(27, 34, 18, 18);
             UI.Img("Sep", rt, Theme.LineSoft).rectTransform.Bottom(0, 1, 18, 18);
-            r.btn.onClick = () => { if (r.item != null && r.item.asset != null) gm.Select(r.item.asset); };
+            r.btn.onClick = () => { if (r.item != null) gm.OpenNews(r.item); };
             return r;
         }
 
@@ -77,7 +79,7 @@ namespace BuyOrDie
         public void Refresh()
         {
             var news = gm.engine.news;
-            counter.text = "오늘의 뉴스 " + Fmt.Colored(gm.engine.NewsFiredToday.ToString(), Theme.Text) + " / " + MarketEngine.NewsPerDay;
+            counter.text = "뉴스 · 공시" + Fmt.Colored("   오늘 " + gm.engine.NewsFiredToday + "/" + MarketEngine.NewsPerDay, Theme.Dim);
             float h = listRoot.rect.height;
             int fit = Mathf.Clamp(Mathf.FloorToInt(h / RowH), 1, rows.Count);
             for (int i = 0; i < rows.Count; i++)

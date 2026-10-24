@@ -48,7 +48,7 @@ namespace BuyOrDie
             Add(() => ui.marketStripRT, "시간이 흐르는 게 보여요",
                 "국내장은 평일 09:00~15:30, 해외장은 22:30~05:00(한국 시간). 맨 아래 줄은 오늘 하루가 얼마나 지났는지예요.\n주말엔 주식이 쉬고 코인만 24시간 움직여요.");
             Add(() => ui.watchlistRT, "종목 고르기",
-                "국내 50 · 해외 50 · 코인 100개. 위쪽 '코인' 탭을 누르고, 아무 코인이나 하나 골라보세요.",
+                "처음엔 국내 50 · 해외 50 · 코인 100개, 매일 새 종목이 상장돼요.\n위쪽 '코인' 탭(또는 Tab 키)을 누르고 코인을 하나 골라보세요. 고르면 자동으로 넘어가요.",
                 () => gm.selected != null && gm.selected.IsCoin, "코인을 하나 선택해 보세요");
             Add(() => ui.chartRT, "차트 읽기",
                 "빨간 캔들은 상승, 파란 캔들은 하락이에요. 마우스를 올리면 그 시점의 가격이 보이고, 오른쪽 위에서 1분 ~ 1시간 봉을 바꿀 수 있어요.");
@@ -63,11 +63,11 @@ namespace BuyOrDie
                 "산 자산과 열린 포지션은 여기에 쌓여요. '전량 매도'나 '청산'으로 정리할 수 있어요. 차트에는 내 평단과 청산가가 점선으로 표시돼요.");
             pfStep.onEnter = () => ui.order.SelectMode(0);
             Add(() => ui.newsRT, "하루 10개의 뉴스",
-                "회사 악재는 몇 시간 안에 반드시 떨어지고, 호재는 반드시 올라요. 관리종목 → 정리매매 → 상장폐지 공시도 여기 떠요. 보유 종목이 상장폐지되면 0원이 돼요!");
+                "AI가 매일 새 뉴스를 써요. 회사 악재는 몇 시간 안에 반드시 떨어지고, 호재는 반드시 올라요.\n뉴스를 누르면 기사 본문이 열려요. 신규 상장 · 상장폐지 공시도 여기 떠요!");
             Add(() => ui.speedRT, "배속",
-                "1x · 2x · 5x 로 시간을 빨리 돌릴 수 있어요. Space 로 일시정지, 1~3 키로 배속 변경.");
+                "시세는 2초마다 한 번씩 바뀌어요(시계 아래 막대). 1x · 2x · 5x 로 빨리 돌릴 수 있고, Space 로 일시정지, 1~3 키로 배속 변경.");
             Add(() => ui.menuRT, "저장 · 설정 · 메뉴",
-                "매일 자정 자동 저장되고, 여기서 직접 저장할 수도 있어요. Esc 를 누르면 메뉴가 열려요.\n그럼 시장을 열어볼까요?");
+                "매일 자정 자동 저장돼요. 거래 내역(H), 뉴스(N), 설정도 여기서 열 수 있어요. Esc 는 메뉴.\n그럼 시장을 열어볼까요?");
 
             BuildLayer();
             Show(0);
@@ -139,8 +139,11 @@ namespace BuyOrDie
             rt.sizeDelta = new Vector2(Mathf.Max(0, x1 - x0), Mathf.Max(0, y1 - y0));
         }
 
+        float autoT;
+
         void Show(int i)
         {
+            autoT = 0;
             index = i;
             var s = steps[i];
             if (s.onEnter != null) s.onEnter();
@@ -175,9 +178,21 @@ namespace BuyOrDie
             if (index < 0 || layer == null) return;
             var s = steps[index];
             bool ok = s.waitFor == null || s.waitFor();
-            next.gameObject.SetActive(ok);
-            hintT.gameObject.SetActive(!ok);
-            hintT.text = !ok ? s.actionHint + "  →" : "";
+            // 직접 해보는 단계는 조건을 채우면 잠깐 칭찬한 뒤 자동으로 다음 단계로
+            if (s.waitFor != null && ok)
+            {
+                autoT += Time.unscaledDeltaTime;
+                next.gameObject.SetActive(false);
+                hintT.gameObject.SetActive(true);
+                hintT.text = Fmt.Colored("좋아요! 다음 단계로 넘어갑니다", Theme.Live);
+                if (autoT > 0.9f) { Next(); return; }
+            }
+            else
+            {
+                next.gameObject.SetActive(ok);
+                hintT.gameObject.SetActive(!ok);
+                hintT.text = !ok ? s.actionHint + "  →" : "";
+            }
             float pulse = 0.55f + 0.45f * Mathf.Abs(Mathf.Sin(Time.unscaledTime * 2.4f));
             foreach (var e in edges) e.color = Theme.A(Theme.Accent, ok ? 0.9f : pulse);
             Layout();

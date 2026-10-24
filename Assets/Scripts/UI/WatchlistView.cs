@@ -288,6 +288,7 @@ namespace BuyOrDie
                 Color bc = Theme.Accent;
                 if (a.status != ListingStatus.Normal) { badge = a.StatusLabel; bc = a.Delisted ? Theme.Dim : Theme.Liq; }
                 else if (pf.Owns(a)) badge = "보유";
+                else if (a.dynamic && gm.engine.minute - a.listedAt < 2 * 1440) { badge = "신규"; bc = Theme.Live; }
                 r.badge.text = badge;
                 r.badge.color = bc;
                 r.badge.rectTransform.anchoredPosition = new Vector2(18 + r.ticker.preferredWidth + 8, -29);

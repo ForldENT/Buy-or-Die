@@ -9,6 +9,9 @@ namespace BuyOrDie
 
     public enum NewsTone { Good, Bad, Macro, Info, Notice }
 
+    /// <summary>뉴스 종류 (본문 문형 선택용)</summary>
+    public enum NewsCat { Company, Coin, Sector, Macro, Info, Listing, Notice, Regime }
+
     public struct Candle
     {
         public int time;
@@ -17,11 +20,15 @@ namespace BuyOrDie
 
     public class NewsItem
     {
+        public int id;
         public int minute;
         public string headline;
         public NewsTone tone;
+        public NewsCat cat;
         public MarketAsset asset;
         public bool breaking;
+        public double priceAt;       // 보도 당시 가격
+        public string source;        // 내장 AI / 편집국
     }
 
     /// <summary>
@@ -59,6 +66,11 @@ namespace BuyOrDie
         public ListingStatus status = ListingStatus.Normal;
         public int statusDay;
 
+        // 신규 상장
+        public bool dynamic;        // 게임 중 새로 상장된 종목
+        public int listedAt = -1;   // 상장 시각 (분)
+        public bool ipoDay;         // 상장 첫 거래일 (가격 제한 없음)
+
         public readonly List<Candle> candles = new List<Candle>(MaxCandles + 8);
 
         public MarketAsset(int index, string name, string ticker, string sector, AssetKind kind, double price, double sigma, double beta)
@@ -94,7 +106,7 @@ namespace BuyOrDie
         public double Change { get { return price - prevClose; } }
         public double LimitUp { get { return prevClose * 1.3; } }
         public double LimitDown { get { return prevClose * 0.7; } }
-        public bool HasPriceLimit { get { return kind == AssetKind.Domestic && status != ListingStatus.Liquidation; } }
+        public bool HasPriceLimit { get { return kind == AssetKind.Domestic && status != ListingStatus.Liquidation && !ipoDay; } }
         public string Unit { get { return IsCoin ? ticker : "주"; } }
 
         public string KindLabel

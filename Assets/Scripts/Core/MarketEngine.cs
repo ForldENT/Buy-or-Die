@@ -10,6 +10,16 @@ namespace BuyOrDie
         public bool fired;
     }
 
+    /// <summary>상장 예정 종목 (공모 → 상장)</summary>
+    [Serializable]
+    public class PendingIPO
+    {
+        public int minute, announce, kind;
+        public string name, ticker, sector;
+        public double price, sigma, beta;
+        public bool announced;
+    }
+
     /// <summary>
     /// 시장 시뮬레이터. Step() 한 번 = 게임 시간 1분.
     /// - 달력: 2027-01-04(월) = DAY 1. 주말에는 주식 휴장, 코인은 24시간.
@@ -47,6 +57,12 @@ namespace BuyOrDie
         public event Action DayStarted;
         public event Action<MarketAsset, bool> PriceLimitHit;
         public event Action<MarketAsset> AssetDelisted;
+        public event Action<MarketAsset> AssetListed;
+
+        // 신규 상장
+        public readonly List<PendingIPO> ipos = new List<PendingIPO>();
+        public const double IpoChance = 0.55;
+        public int nextNewsId = 1;
 
         Random rng;
         readonly Dictionary<string, double> sectorFactor = new Dictionary<string, double>();
@@ -187,6 +203,7 @@ namespace BuyOrDie
 
             if (!suppressNews) FireScheduled();
             if (!suppressNews) UpdateRegime();
+            if (!suppressNews) UpdateIPOs();
             UpdateFactors();
             for (int i = 0; i < assets.Count; i++)
             {
@@ -203,6 +220,7 @@ namespace BuyOrDie
             ProcessListingStatus();
             BuildSchedule(DayIndex, minute + 1);
             PlanRegime();
+            PlanIPO();
             if (DayStarted != null) DayStarted();
         }
 
@@ -212,6 +230,7 @@ namespace BuyOrDie
             {
                 if (a.kind != kind || a.Delisted) continue;
                 a.prevClose = a.price;
+                a.ipoDay = false;
                 a.limitUpNotified = a.limitDownNotified = false;
                 double gap = a.pendingGap + Gauss() * a.sigma * 4.0;
                 a.pendingGap = 0;
@@ -335,6 +354,7 @@ namespace BuyOrDie
             schedule.RemoveAll(s => s.minute / 1440 < dayIndex);
             var templates = NewsCatalog.All;
             var used = new HashSet<int>();
+            var added = new List<ScheduledNews>();
             int made = 0, guard = 0;
             while (made < NewsPerDay && guard++ < 600)
             {
@@ -344,9 +364,11 @@ namespace BuyOrDie
                 if (s == null) continue;
                 used.Add(t.id);
                 schedule.Add(s);
+                added.Add(s);
                 made++;
             }
             schedule.Sort((x, y) => x.minute.CompareTo(y.minute));
+
         }
 
         struct Window { public int start, end, sessionEnd; }
@@ -459,8 +481,10 @@ namespace BuyOrDie
                     if (a.Delisted || a.status == ListingStatus.Liquidation) return;
                     StartEvent(a, s.mag, s.duration);
                     bool breaking = Math.Abs(s.mag) >= (a.IsCoin ? 0.16 : 0.10);
-                    string head = string.Format(t.text, a.name);
-                    Publish((breaking ? "[속보] " : "") + head, t.IsGood ? NewsTone.Good : NewsTone.Bad, a, breaking);
+                    string src;
+                    string head = NewsAI.Headline(t, a, rng, out src);
+                    Publish((breaking && !head.StartsWith("[") ? "[속보] " : "") + head, t.IsGood ? NewsTone.Good : NewsTone.Bad, a, breaking,
+                        a.IsCoin ? NewsCat.Coin : NewsCat.Company, src);
                     break;
                 }
                 case NewsKind.SectorGood:
@@ -471,7 +495,7 @@ namespace BuyOrDie
                         if (Array.IndexOf(t.sectors, a.sector) < 0) continue;
                         StartEvent(a, s.mag * Range(0.7, 1.25), s.duration);
                     }
-                    Publish(t.text, t.IsGood ? NewsTone.Good : NewsTone.Bad, null, false);
+                    Publish(t.text, t.IsGood ? NewsTone.Good : NewsTone.Bad, null, false, NewsCat.Sector);
                     break;
                 case NewsKind.Macro:
                     foreach (var a in assets)
@@ -482,10 +506,10 @@ namespace BuyOrDie
                         double m = s.mag * Math.Abs(mult) * Clamp(a.beta, 0.5, 1.6);
                         StartEvent(a, mult > 0 ? m : -m, s.duration);
                     }
-                    Publish(t.text, NewsTone.Macro, null, t.text.StartsWith("[속보]"));
+                    Publish(t.text, NewsTone.Macro, null, t.text.StartsWith("[속보]"), NewsCat.Macro);
                     break;
                 default:
-                    Publish(t.text, NewsTone.Info, null, false);
+                    Publish(t.text, NewsTone.Info, null, false, NewsCat.Info);
                     break;
             }
         }
@@ -558,7 +582,7 @@ namespace BuyOrDie
                 StartEvent(a, m, a.IsCoin ? rng.Next(300, 480) : rng.Next(200, 330));
             }
             var pool = type < 0 ? CrashNews : BoomNews;
-            Publish(pool[rng.Next(pool.Length)], NewsTone.Macro, null, true);
+            Publish(pool[rng.Next(pool.Length)], NewsTone.Macro, null, true, NewsCat.Regime);
             if (RegimeChanged != null) RegimeChanged(regime);
         }
 
@@ -572,7 +596,7 @@ namespace BuyOrDie
                 StartEvent(a, regime < 0 ? -m : m, 240);
             }
             Publish(regime < 0 ? "[속보] 폭락 이틀째… 투매 행렬 멈추지 않는다" : "[속보] 랠리 이틀째… 신고가 행진 계속",
-                NewsTone.Macro, null, true);
+                NewsTone.Macro, null, true, NewsCat.Regime);
         }
 
         void EndRegime()
@@ -587,7 +611,7 @@ namespace BuyOrDie
                 StartEvent(a, was < 0 ? m : -m, 180);   // 반등 / 숨 고르기
             }
             Publish(was < 0 ? "[시황] 공포 진정… 저가 매수세 유입되며 반등" : "[시황] 과열 식으며 숨 고르기… 차익 실현 매물",
-                NewsTone.Macro, null, false);
+                NewsTone.Macro, null, false, NewsCat.Regime);
             if (RegimeChanged != null) RegimeChanged(0);
         }
 
@@ -683,13 +707,129 @@ namespace BuyOrDie
 
         // ───────────────────────── 발행 ─────────────────────────
 
-        void Publish(string headline, NewsTone tone, MarketAsset asset, bool breaking)
+        NewsItem Publish(string headline, NewsTone tone, MarketAsset asset, bool breaking, NewsCat cat = NewsCat.Notice, string source = NewsAI.SrcDesk)
         {
-            if (suppressNews) return;
-            var n = new NewsItem { minute = minute, headline = headline, tone = tone, asset = asset, breaking = breaking };
+            if (suppressNews) return null;
+            var n = new NewsItem
+            {
+                id = nextNewsId++, minute = minute, headline = headline, tone = tone, asset = asset, breaking = breaking,
+                cat = cat, source = source, priceAt = asset != null ? asset.price : 0
+            };
             news.Add(n);
-            if (news.Count > 120) news.RemoveAt(0);
+            if (news.Count > 200) news.RemoveAt(0);
             if (NewsPublished != null) NewsPublished(n);
+            return n;
+        }
+
+        // ───────────────────────── 신규 상장 (IPO) ─────────────────────────
+
+        /// <summary>매일 자정, 낮은 확률로 오늘 상장할 종목을 만든다. 이름은 NameAI가 짓는다.</summary>
+        void PlanIPO()
+        {
+            if (Day < 2) return;
+            int count = rng.NextDouble() < IpoChance ? 1 : 0;
+            if (rng.NextDouble() < 0.12) count++;
+            for (int i = 0; i < count; i++) MakeIPO(null);
+        }
+
+        /// <summary>상장 예정 종목을 하나 만든다. kind를 비우면 무작위.</summary>
+        public PendingIPO MakeIPO(AssetKind? forceKind, bool immediate = false)
+        {
+            int d0 = DayIndex * 1440;
+            bool wk = Weekday(DayIndex);
+            AssetKind kind;
+            if (forceKind.HasValue) kind = forceKind.Value;
+            else
+            {
+                double r = rng.NextDouble();
+                kind = r < 0.35 ? AssetKind.Domestic : r < 0.62 ? AssetKind.Overseas : AssetKind.Coin;
+            }
+            if (!wk && kind != AssetKind.Coin && !immediate) kind = AssetKind.Coin;
+
+            // 같은 종류 종목들의 섹터 중 하나
+            var sectors = new List<string>();
+            foreach (var a in assets) if (a.kind == kind && !sectors.Contains(a.sector)) sectors.Add(a.sector);
+            string sector = sectors[rng.Next(sectors.Count)];
+
+            var names = new HashSet<string>();
+            var tickers = new HashSet<string>();
+            foreach (var a in assets) { names.Add(a.name); tickers.Add(a.ticker); }
+            foreach (var p0 in ipos) { names.Add(p0.name); tickers.Add(p0.ticker); }
+            string name, ticker;
+            NameAI.Generate(kind, sector, rng, names, tickers, out name, out ticker);
+
+            var p = new PendingIPO { kind = (int)kind, name = name, ticker = ticker, sector = sector };
+            if (kind == AssetKind.Domestic)
+            {
+                p.price = Math.Round(Math.Exp(Range(Math.Log(6000), Math.Log(150000))) / 100) * 100;
+                p.sigma = Range(0.0022, 0.0034);
+                p.minute = d0 + DomOpen;
+            }
+            else if (kind == AssetKind.Overseas)
+            {
+                p.price = Math.Round(Math.Exp(Range(Math.Log(15000), Math.Log(600000))) / 100) * 100;
+                p.sigma = Range(0.0022, 0.0036);
+                p.minute = d0 + OvsOpen;
+            }
+            else
+            {
+                double raw = Math.Exp(Range(Math.Log(0.5), Math.Log(80000)));
+                p.price = raw >= 100 ? Math.Round(raw) : Math.Round(raw, raw >= 1 ? 2 : 4);
+                p.sigma = Range(0.004, 0.0065);
+                p.minute = d0 + rng.Next(10 * 60, 22 * 60);
+            }
+            p.beta = Range(0.9, 1.6);
+            p.announce = kind == AssetKind.Coin ? Math.Max(minute + 1, p.minute - 120) : Math.Max(minute + 1, d0 + rng.Next(10, 90));
+            if (immediate) { p.announce = minute; p.minute = minute + 1; }
+            ipos.Add(p);
+            return p;
+        }
+
+        void UpdateIPOs()
+        {
+            for (int i = ipos.Count - 1; i >= 0; i--)
+            {
+                var p = ipos[i];
+                var kind = (AssetKind)p.kind;
+                if (!p.announced && minute >= p.announce)
+                {
+                    p.announced = true;
+                    string market = kind == AssetKind.Domestic ? "국내 증시" : kind == AssetKind.Overseas ? "해외 증시" : "원화마켓";
+                    Publish(kind == AssetKind.Coin
+                            ? "[상장 예고] " + p.name + "(" + p.ticker + "), 오늘 " + Fmt.Clock(p.minute) + " " + market + " 상장"
+                            : "[공모] " + p.name + ", 오늘 " + market + " 신규 상장… 공모가 " + Fmt.Price(p.price) + "원",
+                        NewsTone.Notice, null, false, NewsCat.Listing);
+                }
+                if (minute < p.minute) continue;
+                ipos.RemoveAt(i);
+                List(p);
+            }
+        }
+
+        MarketAsset List(PendingIPO p)
+        {
+            var kind = (AssetKind)p.kind;
+            var a = new MarketAsset(assets.Count, p.name, p.ticker, p.sector, kind, p.price, p.sigma, p.beta);
+            a.dynamic = true;
+            a.listedAt = minute;
+            a.ipoDay = true;
+            assets.Add(a);
+            if (!sectorFactor.ContainsKey(a.sector)) { sectorFactor[a.sector] = 0; sectorKeys.Add(a.sector); }
+            // 상장 첫날: 공모가 대비 크게 튀는 경우가 많다 (65% 상승)
+            double mag = rng.NextDouble() < 0.65 ? Range(0.1, kind == AssetKind.Coin ? 2.0 : 1.2) : -Range(0.1, 0.4);
+            StartEvent(a, mag, kind == AssetKind.Coin ? 360 : 300, true);
+            Publish("[신규 상장] " + a.name + "(" + a.ticker + ") 거래 시작… " + (kind == AssetKind.Coin ? "시작가 " : "공모가 ") + Fmt.Price(a.price) + "원",
+                NewsTone.Good, a, true, NewsCat.Listing);
+            if (AssetListed != null) AssetListed(a);
+            return a;
+        }
+
+        /// <summary>디버그/테스트용: 지금 바로 상장.</summary>
+        public MarketAsset ForceIPO(AssetKind kind)
+        {
+            var p = MakeIPO(kind, true);
+            ipos.Remove(p);
+            return List(p);
         }
 
         // ───────────────────────── 저장 / 불러오기 ─────────────────────────
@@ -704,25 +844,38 @@ namespace BuyOrDie
             d.assets = new List<AssetSave>();
             foreach (var a in assets)
             {
-                d.assets.Add(new AssetSave
+                var sv = new AssetSave
                 {
                     price = a.price, prevClose = a.prevClose, anchor = a.anchor, pendingGap = a.pendingGap,
                     evActive = a.evActive, evElapsed = a.evElapsed, evDuration = a.evDuration,
                     evStartLog = a.evStartLog, evTargetLog = a.evTargetLog,
                     status = (int)a.status, statusDay = a.statusDay,
-                    limitUp = a.limitUpNotified, limitDown = a.limitDownNotified
-                });
+                    limitUp = a.limitUpNotified, limitDown = a.limitDownNotified,
+                    dyn = a.dynamic, ipoDay = a.ipoDay, listedAt = a.listedAt
+                };
+                if (a.dynamic)
+                {
+                    sv.name = a.name; sv.ticker = a.ticker; sv.sector = a.sector; sv.kind = (int)a.kind;
+                    sv.initPrice = a.initPrice; sv.sigma = a.sigma; sv.beta = a.beta;
+                }
+                d.assets.Add(sv);
             }
             d.news = new List<NewsSave>();
-            int start = Math.Max(0, news.Count - 60);
+            int start = Math.Max(0, news.Count - 150);
             for (int i = start; i < news.Count; i++)
             {
                 var n = news[i];
-                d.news.Add(new NewsSave { minute = n.minute, headline = n.headline, tone = (int)n.tone, asset = n.asset != null ? n.asset.index : -1, breaking = n.breaking });
+                d.news.Add(new NewsSave
+                {
+                    id = n.id, minute = n.minute, headline = n.headline, tone = (int)n.tone, asset = n.asset != null ? n.asset.index : -1,
+                    breaking = n.breaking, cat = (int)n.cat, priceAt = n.priceAt, source = n.source
+                });
             }
             d.schedule = new List<ScheduledSave>();
             foreach (var s in schedule)
                 d.schedule.Add(new ScheduledSave { minute = s.minute, template = s.template, asset = s.asset, duration = s.duration, mag = s.mag, fired = s.fired });
+            d.ipos = new List<PendingIPO>(ipos);
+            d.nextNewsId = nextNewsId;
         }
 
         public void Restore(SaveData d)
@@ -736,10 +889,21 @@ namespace BuyOrDie
                 regime = d.regime; regimeEnd = d.regimeEnd; regimeStart = d.regimeStart; regimePending = d.regimePending;
                 lastRegimeDay = d.lastRegimeDay; regimeWaveDay = d.regimeWaveDay; volMult = d.volMult > 0 ? d.volMult : 1;
             }
+            for (int i = assets.Count; i < d.assets.Count; i++)
+            {
+                var s = d.assets[i];
+                if (!s.dyn || string.IsNullOrEmpty(s.name)) break;
+                var na = new MarketAsset(i, s.name, s.ticker, s.sector, (AssetKind)s.kind, s.initPrice, s.sigma, s.beta);
+                na.dynamic = true;
+                assets.Add(na);
+                if (!sectorFactor.ContainsKey(na.sector)) { sectorFactor[na.sector] = 0; sectorKeys.Add(na.sector); }
+            }
             for (int i = 0; i < assets.Count && i < d.assets.Count; i++)
             {
                 var a = assets[i];
                 var s = d.assets[i];
+                a.listedAt = s.dyn ? s.listedAt : -1;
+                a.ipoDay = s.ipoDay;
                 a.price = s.price; a.prevClose = s.prevClose; a.anchor = s.anchor; a.pendingGap = s.pendingGap;
                 a.evActive = s.evActive; a.evElapsed = s.evElapsed; a.evDuration = s.evDuration;
                 a.evStartLog = s.evStartLog; a.evTargetLog = s.evTargetLog;
@@ -748,11 +912,23 @@ namespace BuyOrDie
                 SynthesizeHistory(a);
             }
             news.Clear();
+            nextNewsId = Math.Max(1, d.nextNewsId);
             foreach (var n in d.news)
-                news.Add(new NewsItem { minute = n.minute, headline = n.headline, tone = (NewsTone)n.tone, asset = n.asset >= 0 ? assets[n.asset] : null, breaking = n.breaking });
+            {
+                var a = n.asset >= 0 && n.asset < assets.Count ? assets[n.asset] : null;
+                news.Add(new NewsItem
+                {
+                    id = n.id > 0 ? n.id : nextNewsId++, minute = n.minute, headline = n.headline, tone = (NewsTone)n.tone, asset = a, breaking = n.breaking,
+                    cat = d.version >= 4 ? (NewsCat)n.cat : (a == null ? NewsCat.Macro : a.IsCoin ? NewsCat.Coin : NewsCat.Company),
+                    priceAt = n.priceAt > 0 ? n.priceAt : (a != null ? a.price : 0),
+                    source = string.IsNullOrEmpty(n.source) ? NewsAI.SrcDesk : n.source
+                });
+            }
             schedule.Clear();
             foreach (var s in d.schedule)
                 schedule.Add(new ScheduledNews { minute = s.minute, template = s.template, asset = s.asset, duration = s.duration, mag = s.mag, fired = s.fired });
+            ipos.Clear();
+            if (d.ipos != null) ipos.AddRange(d.ipos);
             domWasOpen = DomesticOpen;
             ovsWasOpen = OverseasOpen;
         }
@@ -764,7 +940,8 @@ namespace BuyOrDie
             var tmp = new List<Candle>(900);
             double p = a.price;
             double sd = a.sigma / Math.Sqrt(SubSteps);
-            for (int m = minute; m > minute - 6 * 1440 && tmp.Count < 900; m--)
+            int floor = a.dynamic && a.listedAt >= 0 ? a.listedAt : int.MinValue;   // 신규 상장 종목은 상장 이후만
+            for (int m = minute; m > minute - 6 * 1440 && m >= floor && tmp.Count < 900; m--)
             {
                 if (!OpenAt(a.kind, m)) continue;
                 double c = p, h = p, l = p;

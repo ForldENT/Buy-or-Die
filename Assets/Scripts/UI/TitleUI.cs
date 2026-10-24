@@ -246,7 +246,7 @@ namespace BuyOrDie
             logo.rectTransform.At(-14, 22, 330, 330);
 
             UI.Txt(left, "사거나, 죽거나.", 24, Theme.Text, true).rectTransform.At(4, 352, 600, 34);
-            UI.Txt(left, "국내 50 · 해외 50 · 코인 100 종목   ·   하루 10개의 뉴스   ·   그리고 상장폐지", 15, Theme.Sub)
+            UI.Txt(left, "주식 · 코인 200종목으로 시작   ·   AI가 쓰는 하루 10개의 뉴스   ·   신규 상장과 상장폐지", 15, Theme.Sub)
                 .rectTransform.At(4, 390, 700, 24);
 
             var data = SaveSystem.Load();

@@ -45,6 +45,8 @@ namespace BuyOrDie
         public const double StartCash = 10000000;
         public const double FeeRate = 0.0005;
         public const double MaintRate = 0.005;
+        /// <summary>저장되는 거래 기록 최대 건수 (오래된 것부터 지워짐)</summary>
+        public const int MaxLogs = 1000;
 
         public double cash = StartCash;
         public double realized;
@@ -222,7 +224,7 @@ namespace BuyOrDie
         void Log(int minute, MarketAsset a, string action, bool positive, double price, double qty, double pnl, bool hasPnl)
         {
             logs.Add(new TradeLog { minute = minute, asset = a, action = action, positive = positive, price = price, qty = qty, pnl = pnl, hasPnl = hasPnl });
-            if (logs.Count > 200) logs.RemoveAt(0);
+            if (logs.Count > MaxLogs) logs.RemoveRange(0, logs.Count - MaxLogs);
         }
 
         // ───────────────────────── 저장 / 불러오기 ─────────────────────────
@@ -237,7 +239,7 @@ namespace BuyOrDie
             foreach (var h in holdingList) s.holdings.Add(new HoldingSave { asset = h.asset.index, qty = h.qty, avg = h.avg });
             foreach (var p in positions)
                 s.positions.Add(new PositionSave { id = p.id, asset = p.asset.index, isLong = p.isLong, lev = p.leverage, entry = p.entry, margin = p.margin, qty = p.qty, liq = p.liq, openedAt = p.openedAt });
-            int start = Math.Max(0, logs.Count - 60);
+            int start = Math.Max(0, logs.Count - MaxLogs);
             for (int i = start; i < logs.Count; i++)
             {
                 var l = logs[i];

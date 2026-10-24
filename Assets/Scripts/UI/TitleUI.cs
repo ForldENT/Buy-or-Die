@@ -1,4 +1,5 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using TMPro;
 using UnityEngine;
@@ -10,11 +11,17 @@ using UnityEngine.UI;
 namespace BuyOrDie
 {
     /// <summary>
-    /// 타이틀(시작) 화면. 컴퓨터 잠금화면처럼: 왼쪽 로고와 메뉴, 오른쪽 위 실제 시계,
-    /// 뒤로는 실시간으로 움직이는 캔들 차트, 아래로는 시세 티커가 흐른다.
+    /// 타이틀(시작) 화면.
+    /// 앱을 처음 켜면: 회사 로고(FORLD) → 게임 로고 인트로 → 타이틀 메뉴.
+    /// 타이틀은 컴퓨터 잠금화면 콘셉트: 왼쪽 게임 로고와 메뉴, 오른쪽 위 실제 시계,
+    /// 뒤로는 실시간 캔들 차트, 아래로는 시세 티커.
     /// </summary>
     public class TitleUI : MonoBehaviour
     {
+        public const string CompanyLogo = "Forld Logo New 2";
+        public const string GameLogo = "Game Logo";
+        static bool introShown;
+
         class MenuItem
         {
             public UIButton btn;
@@ -31,6 +38,7 @@ namespace BuyOrDie
         RectTransform tickerMask;
         float tickerX;
         bool modalOpen;
+        bool introRunning;
 
         // 배경 차트
         CandleChartGraphic bgChart;
@@ -38,7 +46,7 @@ namespace BuyOrDie
         readonly List<Candle> bgCandles = new List<Candle>();
         double bgPrice = 142350000, bgDrift;
         float bgTimer;
-        System.Random rng = new System.Random();
+        readonly System.Random rng = new System.Random();
         int bgTime;
 
         void Awake()
@@ -59,7 +67,111 @@ namespace BuyOrDie
             BuildLeft();
             BuildClock();
             BuildTicker();
-            if (!GameLaunch.fromTitle) SceneFader.RevealOnStart();
+
+            if (!introShown)
+            {
+                introShown = true;
+                StartCoroutine(Intro());
+            }
+            else
+            {
+                MusicPlayer.Play();
+                if (!GameLaunch.fromTitle) SceneFader.RevealOnStart();
+            }
+        }
+
+        // ───────────────────────── 인트로: 회사 로고 → 게임 로고 ─────────────────────────
+
+        IEnumerator Intro()
+        {
+            introRunning = true;
+            var canvas = Desktop.MakeCanvas("Intro Canvas");
+            canvas.sortingOrder = 500;
+            var ir = (RectTransform)canvas.transform;
+            var cg = canvas.gameObject.AddComponent<CanvasGroup>();
+            UI.Img("Black", ir, Theme.Desktop, true).rectTransform.Fill();
+            // 첫 프레임들은 로딩 직후라 멈칫하기 쉽다 → 몇 프레임 쉬고 시작
+            for (int i = 0; i < 6; i++) yield return null;
+
+            // 1) 회사 로고
+            var company = MakeLogo(ir, CompanyLogo, 980);
+            var companyCg = company.gameObject.AddComponent<CanvasGroup>();
+            companyCg.alpha = 0;
+            yield return Phase(companyCg, company.rectTransform, 0.7f, 1.4f, 0.6f, 0.97f, false);
+            Destroy(company.gameObject);
+
+            // 2) 게임 로고 (여기서 음악 시작)
+            MusicPlayer.Play();
+            var game = MakeLogo(ir, GameLogo, 640);
+            var gameCg = game.gameObject.AddComponent<CanvasGroup>();
+            gameCg.alpha = 0;
+            yield return Phase(gameCg, game.rectTransform, 0.6f, 1.6f, 0f, 0.86f, true);
+
+            // 3) 타이틀로 걷어내기
+            float t = 0;
+            while (t < 0.7f)
+            {
+                t += Dt;
+                float k = Mathf.Clamp01(t / 0.7f);
+                cg.alpha = 1 - k * k * (3 - 2 * k);
+                game.rectTransform.localScale = Vector3.one * (1f + 0.06f * k);
+                yield return null;
+            }
+            Destroy(canvas.gameObject);
+            introRunning = false;
+        }
+
+        Image MakeLogo(RectTransform parent, string res, float size)
+        {
+            var img = UI.Img("Logo_" + res, parent, Color.white);
+            img.sprite = Resources.Load<Sprite>(res);
+            img.preserveAspect = true;
+            img.rectTransform.Center(size, size);
+            return img;
+        }
+
+        /// <summary>페이드 인 → 유지 → 페이드 아웃. 클릭이나 아무 키로 건너뛸 수 있다.</summary>
+        IEnumerator Phase(CanvasGroup g, RectTransform rt, float fadeIn, float hold, float fadeOut, float fromScale, bool bounce)
+        {
+            float total = fadeIn + hold + fadeOut;
+            float t = 0;
+            yield return null;
+            while (t < total)
+            {
+                if (SkipPressed())
+                {
+                    if (t < fadeIn + hold) t = fadeIn + hold;   // 바로 페이드 아웃으로
+                    else break;
+                }
+                t += Dt;
+                float a;
+                if (t < fadeIn) a = t / fadeIn;
+                else if (t < fadeIn + hold) a = 1;
+                else a = fadeOut > 0 ? 1 - (t - fadeIn - hold) / fadeOut : 1;
+                g.alpha = Mathf.Clamp01(a);
+
+                float k = Mathf.Clamp01(t / Mathf.Max(0.01f, fadeIn + hold * 0.5f));
+                float e = bounce ? EaseOutBack(Mathf.Clamp01(t / (fadeIn * 1.3f))) : 1 - Mathf.Pow(1 - k, 3);
+                rt.localScale = Vector3.one * Mathf.LerpUnclamped(fromScale, 1f, e);
+                yield return null;
+            }
+            g.alpha = fadeOut > 0 ? 0 : 1;
+        }
+
+        /// <summary>프레임이 멈칫해도 로고가 건너뛰어지지 않게 한 프레임 시간을 1/30초로 제한.</summary>
+        static float Dt { get { return Mathf.Min(Time.unscaledDeltaTime, 1f / 30f); } }
+
+        static float EaseOutBack(float x)
+        {
+            const float c1 = 1.70158f, c3 = c1 + 1;
+            return 1 + c3 * Mathf.Pow(x - 1, 3) + c1 * Mathf.Pow(x - 1, 2);
+        }
+
+        static bool SkipPressed()
+        {
+            var kb = Keyboard.current;
+            var ms = Mouse.current;
+            return (kb != null && kb.anyKey.wasPressedThisFrame) || (ms != null && ms.leftButton.wasPressedThisFrame);
         }
 
         // ───────────────────────── 배경 차트 ─────────────────────────
@@ -75,7 +187,6 @@ namespace BuyOrDie
             bgChart.raycastTarget = false;
             bgChart.alpha = 0.32f;
             bgChart.slot = 14;
-            // 지나간 캔들 미리 채우기
             for (int i = 0; i < 140; i++) AddBgCandle();
         }
 
@@ -121,42 +232,44 @@ namespace BuyOrDie
 
         void BuildLeft()
         {
-            float x = 120;
             var left = UI.Rect("Left", root);
             left.anchorMin = new Vector2(0, 0.5f); left.anchorMax = new Vector2(0, 0.5f);
             left.pivot = new Vector2(0, 0.5f);
-            left.anchoredPosition = new Vector2(x, 10);
+            left.anchoredPosition = new Vector2(120, 6);
             left.sizeDelta = new Vector2(720, 820);
 
-            UI.Txt(left, "BuyOrDie OS 1.1   ·   ForldENT", 13, Theme.Dim).rectTransform.At(4, 0, 500, 20);
-            var logo = UI.Txt(left, Fmt.Colored("BUY", Theme.Up) + Fmt.Colored(" OR ", Theme.Dim) + Fmt.Colored("DIE", Theme.Down), 112, Theme.Text, true);
-            logo.overflowMode = TextOverflowModes.Overflow;
-            logo.rectTransform.At(0, 24, 720, 130);
-            UI.Txt(left, "사거나, 죽거나.", 24, Theme.Text, true).rectTransform.At(4, 162, 600, 34);
+            UI.Txt(left, "BuyOrDie OS " + Application.version + "   ·   ForldENT", 13, Theme.Dim).rectTransform.At(4, 0, 500, 20);
+
+            var logo = UI.Img("GameLogo", left, Color.white);
+            logo.sprite = Resources.Load<Sprite>(GameLogo);
+            logo.preserveAspect = true;
+            logo.rectTransform.At(-14, 22, 330, 330);
+
+            UI.Txt(left, "사거나, 죽거나.", 24, Theme.Text, true).rectTransform.At(4, 352, 600, 34);
             UI.Txt(left, "국내 50 · 해외 50 · 코인 100 종목   ·   하루 10개의 뉴스   ·   그리고 상장폐지", 15, Theme.Sub)
-                .rectTransform.At(4, 202, 700, 24);
+                .rectTransform.At(4, 390, 700, 24);
 
             var data = SaveSystem.Load();
             string loadSub = data != null
                 ? "DAY " + data.day + "  ·  총자산 " + Fmt.Short(data.equity) + "원  ·  " + data.savedAt + " 저장"
                 : "저장된 게임이 없어요";
 
-            float y = 280;
-            AddItem(left, y, "01", "새 게임", "NEW GAME", "튜토리얼과 함께 1,000만 원으로 시작", true, OnNewGame); y += 76;
-            AddItem(left, y, "02", "이어하기", "LOAD GAME", loadSub, data != null, OnLoadGame); y += 76;
-            AddItem(left, y, "03", "설정", "SETTINGS", "효과음 · 상승/하락 색 · 배속 · 알림 · 화면", true, OnSettings); y += 76;
+            float y = 440;
+            AddItem(left, y, "01", "새 게임", "NEW GAME", "튜토리얼과 함께 1,000만 원으로 시작", true, OnNewGame); y += 72;
+            AddItem(left, y, "02", "이어하기", "LOAD GAME", loadSub, data != null, OnLoadGame); y += 72;
+            AddItem(left, y, "03", "설정", "SETTINGS", "효과음 · 배경음악 · 상승/하락 색 · 배속 · 알림 · 화면", true, OnSettings); y += 72;
             if (Application.platform != RuntimePlatform.WebGLPlayer)
             {
                 AddItem(left, y, "04", "종료", "QUIT", "다음에 또 만나요", true, () => Application.Quit());
-                y += 76;
+                y += 72;
             }
 
             double best = GameManager.BestEquity;
             string rec = best > 0
                 ? "최고 기록   " + Fmt.Colored(Fmt.Won(best) + "원", Theme.Text) + "   ·   최장 생존 DAY " + GameManager.BestDay
                 : "상승은 " + Fmt.Colored("빨강", Theme.Up) + ", 하락은 " + Fmt.Colored("파랑", Theme.Down) + ".  설정에서 해외식 색으로 바꿀 수 있어요.";
-            UI.HLine(left, y + 14, 4, 300, Theme.LineSoft);
-            UI.Txt(left, rec, 13, Theme.Sub).rectTransform.At(4, y + 30, 640, 22);
+            UI.HLine(left, y + 12, 4, 300, Theme.LineSoft);
+            UI.Txt(left, rec, 13, Theme.Sub).rectTransform.At(4, y + 26, 640, 22);
 
             SetFocus(data != null ? 1 : 0);
         }
@@ -165,24 +278,24 @@ namespace BuyOrDie
         {
             var m = new MenuItem { enabled = enabled, action = action };
             int index = items.Count;
-            m.btn = UI.Button(parent, "", 1, () => { if (m.enabled) m.action(); },
+            m.btn = UI.Button(parent, "", 1, () => { if (m.enabled && !introRunning) m.action(); },
                 Theme.A(Theme.PanelHi, 0), Theme.A(Theme.PanelHi, 0.55f), Theme.A(Theme.PanelHi2, 0.8f), Theme.Text);
             Destroy(m.btn.label.gameObject);
             m.btn.label = null;
             m.btn.interactable = enabled;
-            m.btn.rectTransform().At(0, y, 520, 66);
+            m.btn.rectTransform().At(0, y, 520, 64);
             m.btn.onHover = on => { if (on && m.enabled) SetFocus(index); };
             var t = m.btn.transform;
             m.bar = UI.Img("Bar", t, Theme.Accent);
             m.bar.rectTransform.Left(0, 3, 10, 10);
             m.num = UI.Txt(t, num, 13, Theme.Dim, true);
-            m.num.rectTransform.At(22, 12, 40, 22);
+            m.num.rectTransform.At(22, 11, 40, 22);
             m.title = UI.Txt(t, title, 22, enabled ? Theme.Text : Theme.Dim, true);
-            m.title.rectTransform.At(62, 7, 200, 30);
+            m.title.rectTransform.At(62, 6, 200, 30);
             m.en = UI.Txt(t, en, 11, Theme.Dim, true);
             m.sub = UI.Txt(t, sub, 12, enabled ? Theme.Sub : Theme.Dim);
-            m.sub.rectTransform.At(62, 39, 440, 18);
-            m.en.rectTransform.At(62 + m.title.preferredWidth + 12, 15, 120, 18);
+            m.sub.rectTransform.At(62, 38, 440, 18);
+            m.en.rectTransform.At(62 + m.title.preferredWidth + 12, 14, 120, 18);
             items.Add(m);
         }
 
@@ -229,7 +342,7 @@ namespace BuyOrDie
             StartNew();
         }
 
-        System.Collections.IEnumerator WatchModal()
+        IEnumerator WatchModal()
         {
             yield return null;
             while (root.Find("Modal") != null) yield return null;
@@ -260,9 +373,8 @@ namespace BuyOrDie
             SettingsPanel.Open(root, false, () =>
             {
                 modalOpen = false;
-                // 데이터 삭제 / 색 변경을 반영하려고 화면을 다시 연다
-                SceneFader.Load(SceneFader.TitleScene, "BuyOrDie OS");
                 GameLaunch.fromTitle = true;
+                SceneFader.Load(SceneFader.TitleScene, "BuyOrDie OS");
             });
         }
 
@@ -324,7 +436,7 @@ namespace BuyOrDie
             tickerT.rectTransform.anchoredPosition = new Vector2(tickerX + 16, 0);
 
             var kb = Keyboard.current;
-            if (kb == null || modalOpen || SceneFader.Busy) return;
+            if (kb == null || modalOpen || introRunning || SceneFader.Busy) return;
             if (kb.upArrowKey.wasPressedThisFrame || kb.wKey.wasPressedThisFrame) Move(-1);
             if (kb.downArrowKey.wasPressedThisFrame || kb.sKey.wasPressedThisFrame) Move(1);
             if (kb.enterKey.wasPressedThisFrame || kb.numpadEnterKey.wasPressedThisFrame || kb.spaceKey.wasPressedThisFrame)

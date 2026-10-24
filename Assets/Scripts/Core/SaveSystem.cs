@@ -28,7 +28,7 @@ namespace BuyOrDie
 
     [Serializable] public class SaveData
     {
-        public int version = 2;
+        public int version = 3;
         public string savedAt;
         public int minute, seed, day, selected;
         public double equity, dayStartEquity;
@@ -38,6 +38,9 @@ namespace BuyOrDie
         public List<NewsSave> news;
         public List<ScheduledSave> schedule;
         public PortfolioSave portfolio;
+        // 대폭락장 / 대호황장
+        public int regime, regimeEnd, regimeStart = -1, regimePending, lastRegimeDay = -99, regimeWaveDay;
+        public double volMult = 1;
     }
 
     /// <summary>
@@ -108,6 +111,13 @@ namespace BuyOrDie
         /// <summary>0 = 모든 속보, 1 = 보유 종목만, 2 = 끄기</summary>
         public static int NewsAlerts { get { return PlayerPrefs.GetInt("set_alerts", 0); } set { PlayerPrefs.SetInt("set_alerts", value); } }
         public static bool Fullscreen { get { return Screen.fullScreen; } set { Screen.fullScreen = value; } }
+
+        static float music = -1;
+        public static float MusicVolume
+        {
+            get { if (music < 0) music = PlayerPrefs.GetFloat("set_music", 0.45f); return music; }
+            set { music = value; PlayerPrefs.SetFloat("set_music", value); MusicPlayer.ApplyVolume(); }
+        }
 
         public static void Save() { PlayerPrefs.Save(); }
     }

@@ -65,6 +65,13 @@ namespace BuyOrDie
         RectTransform pauseMenu;
         int modalCount;
         public TutorialOverlay tutorial;
+        int lastModalCloseFrame = -1;
+
+        // 대폭락장 / 대호황장 경보
+        CanvasGroup alertCg;
+        TextMeshProUGUI alertTitle, alertSub, alertTip;
+        Image alertBar, regimeStrip;
+        float alertT = -1;
 
         public bool OverlayOpen
         {
@@ -90,6 +97,7 @@ namespace BuyOrDie
             BuildWindow();
             BuildTaskbar();
             BuildBanner();
+            BuildAlert();
             toastRoot = UI.Rect("Toasts", root);
             toastRoot.anchorMin = toastRoot.anchorMax = toastRoot.pivot = new Vector2(1, 0);
             toastRoot.anchoredPosition = new Vector2(-Margin - 18, TaskbarH + Margin + TickerH + 14);
@@ -123,6 +131,9 @@ namespace BuyOrDie
             statusT.rectTransform.AtRight(200, 0, 420, TitleH);
             UI.Txt(title, "—        □        ×", 13, Theme.Dim, false, TextAlignmentOptions.MidlineRight).rectTransform.AtRight(18, 0, 160, TitleH);
             UI.HLine(inner, TitleH);
+            regimeStrip = UI.Img("RegimeStrip", inner, Theme.Up);
+            regimeStrip.rectTransform.Top(TitleH - 2, 3);
+            regimeStrip.enabled = false;
 
             summaryRT = UI.Rect("Summary", inner).Top(TitleH + 1, SummaryH);
             BuildSummary(summaryRT);
@@ -237,13 +248,15 @@ namespace BuyOrDie
             UI.Txt(app, "HTS 트레이딩", 13, Theme.Text, true, TextAlignmentOptions.Center).rectTransform.Fill();
             UI.Img("Active", app, Theme.Accent).rectTransform.Bottom(0, 2, 40, 40);
 
-            menuRT = UI.Rect("MenuButtons", bar).At(TaskbarH + 296, 5, 240, TaskbarH - 10);
+            menuRT = UI.Rect("MenuButtons", bar).At(TaskbarH + 296, 5, 300, TaskbarH - 10);
             var save = UI.GhostButton(menuRT, "저장", 13, () => gm.SaveGame(true), true);
             save.rectTransform().At(0, 0, 70, TaskbarH - 10);
+            var hist = UI.GhostButton(menuRT, "내역", 13, OpenHistory, true);
+            hist.rectTransform().At(76, 0, 70, TaskbarH - 10);
             var set = UI.GhostButton(menuRT, "설정", 13, OpenSettings, true);
-            set.rectTransform().At(76, 0, 70, TaskbarH - 10);
+            set.rectTransform().At(152, 0, 70, TaskbarH - 10);
             var menu = UI.GhostButton(menuRT, "메뉴", 13, OpenPauseMenu, true);
-            menu.rectTransform().At(152, 0, 70, TaskbarH - 10);
+            menu.rectTransform().At(228, 0, 70, TaskbarH - 10);
 
             float x = 18;
             var clock = UI.Rect("Clock", bar).AtRight(x, 0, 150, TaskbarH);
@@ -421,9 +434,18 @@ namespace BuyOrDie
             soundBtn.textColor = muted ? Theme.Dim : Theme.Sub;
             soundBtn.SetLabel(muted ? "♪×" : "♪");
             soundBtn.Refresh();
-            if (gm.state == GameState.Playing && gm.Speed == 0) statusT.text = "■  일시정지  ·  Space 로 재개";
-            else if (gm.state == GameState.Playing && !e.AnyStockOpen) statusT.text = Fmt.Colored("주식 휴장 · 시간 빠르게 진행", Theme.Sub);
-            else statusT.text = "";
+            string regime = "";
+            if (e.regime != 0)
+            {
+                Color rc = e.regime < 0 ? Theme.Down : Theme.Up;
+                regime = Fmt.Colored((e.regime < 0 ? "▼ " : "▲ ") + e.RegimeName + " 진행 중 · 종료까지 " + Fmt.Duration(Mathf.Max(0, e.regimeEnd - e.minute)), rc);
+            }
+            string state = "";
+            if (gm.state == GameState.Playing && gm.Speed == 0) state = "■  일시정지  ·  Space 로 재개";
+            else if (gm.state == GameState.Playing && !e.AnyStockOpen) state = Fmt.Colored("주식 휴장 · 시간 빠르게 진행", Theme.Sub);
+            statusT.text = regime.Length > 0 && state.Length > 0 ? regime + Fmt.Colored("   |   ", Theme.Dim) + state : regime + state;
+            regimeStrip.enabled = e.regime != 0;
+            if (e.regime != 0) regimeStrip.color = e.regime < 0 ? Theme.Down : Theme.Up;
         }
 
         void ToggleSound()
@@ -526,12 +548,85 @@ namespace BuyOrDie
                 if (bannerT > life) { bannerT = -1; bannerCg.alpha = 0; }
             }
 
+            if (alertT >= 0)
+            {
+                alertT += dt;
+                const float alife = 4.2f;
+                float a = alertT < 0.25f ? alertT / 0.25f : (alertT > alife - 0.6f ? Mathf.Clamp01((alife - alertT) / 0.6f) : 1);
+                alertCg.alpha = a;
+                float s = 1f + 0.06f * (1 - Mathf.Min(1, alertT / 0.25f));
+                alertCg.transform.localScale = new Vector3(s, s, 1);
+                alertBar.color = Theme.A(alertBar.color, 0.55f + 0.45f * Mathf.Abs(Mathf.Sin(alertT * 6f)));
+                if (alertT > alife) { alertT = -1; alertCg.alpha = 0; }
+            }
+            if (regimeStrip != null && regimeStrip.enabled)
+                regimeStrip.color = Theme.A(regimeStrip.color, 0.35f + 0.65f * Mathf.Abs(Mathf.Sin(Time.unscaledTime * 2.6f)));
+
             if (shakeT > 0)
             {
                 shakeT -= dt;
                 float s = shakeT > 0 ? 6f * shakeT / 0.35f : 0;
                 window.anchoredPosition = windowBase + new Vector2(UnityEngine.Random.Range(-s, s), UnityEngine.Random.Range(-s, s));
             }
+        }
+
+        // ───────────────────────── 대폭락장 / 대호황장 경보 ─────────────────────────
+
+        void BuildAlert()
+        {
+            var b = UI.Img("RegimeAlert", root, Theme.Line);
+            var rt = b.rectTransform;
+            rt.anchorMin = rt.anchorMax = new Vector2(0.5f, 0.5f);
+            rt.pivot = new Vector2(0.5f, 0.5f);
+            rt.sizeDelta = new Vector2(820, 190);
+            rt.anchoredPosition = new Vector2(0, 90);
+            var inner = UI.Img("Inner", rt, Theme.A(Theme.Window, 0.97f)).rectTransform.Fill(1, 1, 1, 1);
+            alertBar = UI.Img("Bar", inner, Theme.Down);
+            alertBar.rectTransform.Top(0, 4);
+            alertTitle = UI.Txt(inner, "", 52, Theme.Text, true, TextAlignmentOptions.Center);
+            alertTitle.overflowMode = TextOverflowModes.Overflow;
+            alertTitle.rectTransform.Top(24, 64);
+            alertSub = UI.Txt(inner, "", 16, Theme.Text, true, TextAlignmentOptions.Center);
+            alertSub.rectTransform.Top(98, 24);
+            alertTip = UI.Txt(inner, "", 13, Theme.Sub, false, TextAlignmentOptions.Center);
+            alertTip.rectTransform.Top(132, 22);
+            alertCg = b.gameObject.AddComponent<CanvasGroup>();
+            alertCg.alpha = 0;
+            alertCg.blocksRaycasts = false;
+            alertCg.interactable = false;
+        }
+
+        public void ShowRegimeAlert(int regime)
+        {
+            if (regime == 0) return;
+            bool crash = regime < 0;
+            Color c = crash ? Theme.Down : Theme.Up;
+            alertBar.color = c;
+            alertTitle.color = c;
+            alertTitle.text = crash ? "▼  대폭락장 발생" : "▲  대호황장 발생";
+            alertSub.text = crash
+                ? "모든 시장이 한꺼번에 무너집니다  ·  변동성 1.8배  ·  1~2일 지속"
+                : "전 종목에 매수세가 몰립니다  ·  변동성 1.45배  ·  1~2일 지속";
+            alertTip.text = crash
+                ? "숏 포지션의 기회일 수도, 파산의 시작일 수도 있어요."
+                : "올라탈 것인가, 꼭지에서 내릴 것인가.";
+            alertT = 0;
+            alertCg.transform.SetAsLastSibling();
+            toastRoot.SetAsLastSibling();
+            Shake();
+            RefreshTaskbar();
+        }
+
+        public void OpenHistory()
+        {
+            if (modalCount > 0 || pauseMenu != null || overlay != null || (tutorial != null && tutorial.Active)) return;
+            modalCount++;
+            TradeHistoryWindow.Open(root, gm, () =>
+            {
+                modalCount--;
+                lastModalCloseFrame = Time.frameCount;
+                RefreshAll();
+            });
         }
 
         // ───────────────────────── 메뉴 / 설정 ─────────────────────────
@@ -543,13 +638,14 @@ namespace BuyOrDie
             SettingsPanel.Open(root, true, () =>
             {
                 modalCount--;
+                lastModalCloseFrame = Time.frameCount;
                 RefreshAll();
             });
         }
 
         public void OpenPauseMenu()
         {
-            if (pauseMenu != null || overlay != null || (tutorial != null && tutorial.Active)) return;
+            if (pauseMenu != null || overlay != null || modalCount > 0 || Time.frameCount == lastModalCloseFrame || (tutorial != null && tutorial.Active)) return;
             RectTransform ov;
             var c = Modal.Open(root, 440, 420, out ov);
             pauseMenu = ov;

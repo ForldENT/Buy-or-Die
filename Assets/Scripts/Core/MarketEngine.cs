@@ -34,6 +34,13 @@ namespace BuyOrDie
         public int seed;
         public bool suppressNews;
 
+        // 대폭락장(-1) / 대호황장(+1): 낮은 확률로 발생해 1~2일 이어지는 시장 전체 이벤트
+        public int regime, regimeEnd, regimeStart = -1, regimePending, lastRegimeDay = -99, regimeWaveDay;
+        public double volMult = 1;
+        public event Action<int> RegimeChanged;
+        public const double CrashChance = 0.035, BoomChance = 0.035;
+        public string RegimeName { get { return regime < 0 ? "대폭락장" : regime > 0 ? "대호황장" : ""; } }
+
         public event Action<NewsItem> NewsPublished;
         public event Action<AssetKind> SessionOpened;
         public event Action<AssetKind> SessionClosed;
@@ -179,6 +186,7 @@ namespace BuyOrDie
             }
 
             if (!suppressNews) FireScheduled();
+            if (!suppressNews) UpdateRegime();
             UpdateFactors();
             for (int i = 0; i < assets.Count; i++)
             {
@@ -194,6 +202,7 @@ namespace BuyOrDie
             if (suppressNews) return;
             ProcessListingStatus();
             BuildSchedule(DayIndex, minute + 1);
+            PlanRegime();
             if (DayStarted != null) DayStarted();
         }
 
@@ -235,7 +244,7 @@ namespace BuyOrDie
         {
             double o = a.price, h = o, l = o, p = o;
             double mkt = a.beta * FactorOf(a);
-            double sd = a.sigma / Math.Sqrt(SubSteps);
+            double sd = a.sigma * volMult / Math.Sqrt(SubSteps);
             bool ev = a.evActive;
 
             if (ev)
@@ -481,6 +490,107 @@ namespace BuyOrDie
             }
         }
 
+        // ───────────────────────── 대폭락장 / 대호황장 ─────────────────────────
+
+        static readonly string[] CrashNews =
+        {
+            "[긴급] 글로벌 증시 블랙먼데이… 대폭락장 진입",
+            "[긴급] 초대형 헤지펀드 파산… 전 세계 시장 동반 폭락",
+            "[긴급] 신용위기 공포 확산… 패닉셀 쏟아진다",
+            "[긴급] 거대 은행 뱅크런 사태… 금융 시스템 흔들",
+            "[긴급] 전면전 위기 고조… 위험자산 대탈출"
+        };
+        static readonly string[] BoomNews =
+        {
+            "[특보] 역사적 유동성 랠리… 대호황장 개막",
+            "[특보] AI 산업혁명 기대감 폭발… 전 종목 불기둥",
+            "[특보] 전쟁 종식 선언… 위험자산 일제히 폭등",
+            "[특보] 중앙은행 무제한 양적완화… 시장은 축제",
+            "[특보] 인플레이션 완전 정복 선언… 사상 최대 랠리"
+        };
+
+        /// <summary>매일 자정에 낮은 확률로 오늘 중 대폭락/대호황을 예약한다.</summary>
+        void PlanRegime()
+        {
+            if (regime != 0 || regimeStart >= 0 || Day < 3 || DayIndex - lastRegimeDay < 5) return;
+            double r = rng.NextDouble();
+            int type = r < CrashChance ? -1 : (r < CrashChance + BoomChance ? 1 : 0);
+            if (type == 0) return;
+            int d0 = DayIndex * 1440;
+            regimeStart = Weekday(DayIndex) ? d0 + DomOpen + rng.Next(20, 240) : d0 + rng.Next(10 * 60, 20 * 60);
+            regimePending = type;
+        }
+
+        void UpdateRegime()
+        {
+            if (regimeStart >= 0 && minute >= regimeStart)
+            {
+                int t = regimePending;
+                regimeStart = -1;
+                regimePending = 0;
+                StartRegime(t);
+            }
+            if (regime == 0) return;
+            if (minute >= regimeEnd) { EndRegime(); return; }
+            if (DayIndex != regimeWaveDay && MinuteOfDay == DomOpen) SecondWave();
+        }
+
+        /// <summary>디버그/테스트용: 즉시 발생.</summary>
+        public void ForceRegime(int type)
+        {
+            if (regime != 0) EndRegime();
+            StartRegime(type);
+        }
+
+        void StartRegime(int type)
+        {
+            regime = type;
+            lastRegimeDay = DayIndex;
+            regimeWaveDay = DayIndex;
+            int days = rng.Next(1, 3);
+            regimeEnd = (DayIndex + days) * 1440 + DomClose;
+            volMult = type < 0 ? 1.8 : 1.45;
+            foreach (var a in assets)
+            {
+                if (a.Delisted || a.status == ListingStatus.Liquidation) continue;
+                double m = (a.IsCoin ? Range(0.22, 0.42) : Range(0.10, 0.24)) * Clamp(a.beta, 0.6, 1.5);
+                m = type < 0 ? -Math.Min(m, 0.6) : m;
+                StartEvent(a, m, a.IsCoin ? rng.Next(300, 480) : rng.Next(200, 330));
+            }
+            var pool = type < 0 ? CrashNews : BoomNews;
+            Publish(pool[rng.Next(pool.Length)], NewsTone.Macro, null, true);
+            if (RegimeChanged != null) RegimeChanged(regime);
+        }
+
+        void SecondWave()
+        {
+            regimeWaveDay = DayIndex;
+            foreach (var a in assets)
+            {
+                if (a.Delisted || a.status == ListingStatus.Liquidation) continue;
+                double m = Range(0.04, 0.12) * (a.IsCoin ? 1.5 : 1.0);
+                StartEvent(a, regime < 0 ? -m : m, 240);
+            }
+            Publish(regime < 0 ? "[속보] 폭락 이틀째… 투매 행렬 멈추지 않는다" : "[속보] 랠리 이틀째… 신고가 행진 계속",
+                NewsTone.Macro, null, true);
+        }
+
+        void EndRegime()
+        {
+            int was = regime;
+            regime = 0;
+            volMult = 1;
+            foreach (var a in assets)
+            {
+                if (a.Delisted || a.status == ListingStatus.Liquidation) continue;
+                double m = Range(0.02, 0.06);
+                StartEvent(a, was < 0 ? m : -m, 180);   // 반등 / 숨 고르기
+            }
+            Publish(was < 0 ? "[시황] 공포 진정… 저가 매수세 유입되며 반등" : "[시황] 과열 식으며 숨 고르기… 차익 실현 매물",
+                NewsTone.Macro, null, false);
+            if (RegimeChanged != null) RegimeChanged(0);
+        }
+
         // ───────────────────────── 상장폐지 ─────────────────────────
 
         void ProcessListingStatus()
@@ -589,6 +699,8 @@ namespace BuyOrDie
             d.minute = minute;
             d.seed = seed;
             d.domFactor = domFactor; d.ovsFactor = ovsFactor; d.cryFactor = cryFactor;
+            d.regime = regime; d.regimeEnd = regimeEnd; d.regimeStart = regimeStart; d.regimePending = regimePending;
+            d.lastRegimeDay = lastRegimeDay; d.regimeWaveDay = regimeWaveDay; d.volMult = volMult;
             d.assets = new List<AssetSave>();
             foreach (var a in assets)
             {
@@ -619,6 +731,11 @@ namespace BuyOrDie
             seed = d.seed;
             rng = new Random(d.seed ^ (d.minute * 7919));
             domFactor = d.domFactor; ovsFactor = d.ovsFactor; cryFactor = d.cryFactor;
+            if (d.version >= 3)
+            {
+                regime = d.regime; regimeEnd = d.regimeEnd; regimeStart = d.regimeStart; regimePending = d.regimePending;
+                lastRegimeDay = d.lastRegimeDay; regimeWaveDay = d.regimeWaveDay; volMult = d.volMult > 0 ? d.volMult : 1;
+            }
             for (int i = 0; i < assets.Count && i < d.assets.Count; i++)
             {
                 var a = assets[i];

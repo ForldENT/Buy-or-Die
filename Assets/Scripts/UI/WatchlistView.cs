@@ -109,8 +109,9 @@ namespace BuyOrDie
                 idxC[i].rectTransform.AtRight(18, 36 + i * 24, 72, 20);
             }
             var keys = UI.Txt(mk,
-                Fmt.Colored("Space", Theme.Sub) + " 일시정지  " + Fmt.Colored("1~3", Theme.Sub) + " 배속  " +
-                Fmt.Colored("↑↓", Theme.Sub) + " 종목  " + Fmt.Colored("Tab", Theme.Sub) + " 탭  " + Fmt.Colored("Esc", Theme.Sub) + " 메뉴",
+                Fmt.Colored("Space", Theme.Sub) + " 정지  " + Fmt.Colored("1~3", Theme.Sub) + " 배속  " +
+                Fmt.Colored("↑↓", Theme.Sub) + " 종목  " + Fmt.Colored("Tab", Theme.Sub) + " 탭  " +
+                Fmt.Colored("H", Theme.Sub) + " 내역  " + Fmt.Colored("Esc", Theme.Sub) + " 메뉴",
                 11, Theme.Dim);
             keys.rectTransform.At(18, 116, 300, 20);
 

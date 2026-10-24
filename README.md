@@ -12,12 +12,14 @@
 |---|---|
 | 종목 | 국내 주식 50 · 해외 주식 50 · 코인 100 (실존 종목 패러디 이름) |
 | 거래 | 현물 매수/매도, 레버리지 롱/숏 (주식 최대 x10, 코인 최대 x50), 강제 청산 |
-| 시간 | 게임 1분 = 현실 0.25초 (장중 기준), 일시정지 / 1x / 2x / 5x |
+| 시간 | 게임 1분 = 현실 0.5초 (장중 기준), 일시정지 / 1x / 2x / 5x |
 | 장 시간 | 국내 평일 09:00~15:30 · 해외 평일 22:30~05:00(한국 시간) · 코인 24시간 · 주말 주식 휴장 |
 | 뉴스 | 300종 중 하루 10개 무작위 발표, 기업 악재는 몇 시간 안에 반드시 하락 / 호재는 반드시 상승 |
 | 상장폐지 | 관리종목 지정 → 정리매매 → 상장폐지 (현물 0원, 포지션은 마지막 가격으로 정산) |
-| 진행 | 새 게임(튜토리얼) / 이어하기, 매일 자정 자동 저장 |
-| 기타 | 투자자 등급(깡통 계좌 → 월가의 늑대), 일일 손익 리포트, 최고 기록 저장, 효과음 |
+| 시장 이벤트 | 낮은 확률로 **대폭락장 / 대호황장** 발생 — 1~2일간 시장 전체가 크게 움직임 |
+| 진행 | 새 게임(튜토리얼) / 이어하기, 매일 자정 자동 저장, 거래 기록 최근 1,000건 저장 |
+| 연출 | 회사 로고(FORLD) → 게임 로고 인트로, 잔잔한 배경음악, 전용 웹 로딩 화면 |
+| 기타 | 투자자 등급(깡통 계좌 → 월가의 늑대), 일일 손익 리포트, 거래 내역 창(필터·승률), 최고 기록 저장, 효과음 |
 
 ---
 
@@ -32,7 +34,9 @@
 ### 빌드
 - **Windows**: File → Build Profiles → Windows → Build
 - **WebGL**: Build Profiles에서 WebGL로 전환 후 Build
-  - 입력은 Input System, 저장은 PlayerPrefs, 효과음은 코드로 합성하므로 WebGL에서도 그대로 동작합니다.
+  - 웹 템플릿은 `Assets/WebGLTemplates/ForldENT` (FORLD 로고 로딩 화면, 창 크기에 맞춰 16:9 유지)
+  - Gzip 압축 + 해제 대체(Decompression Fallback) 사용 → 서버 설정 없이 itch.io · GitHub Pages에서 동작
+  - 유니티 스플래시는 끄고, 게임 안에서 회사 로고 → 게임 로고 인트로를 직접 보여줍니다.
 
 ---
 
@@ -55,8 +59,10 @@
 | `1` `2` `3` | 1x / 2x / 5x 배속 |
 | `↑` `↓` | 종목 이동 |
 | `Tab` | 국내 / 해외 / 코인 탭 전환 |
+| `H` | 거래 내역 창 |
 | `Esc` | 일시정지 메뉴 (계속 · 저장 · 설정 · 타이틀로) |
 | 타이틀 `↑` `↓` `Enter` | 메뉴 선택 |
+| 인트로 중 아무 키 / 클릭 | 로고 건너뛰기 |
 
 ---
 
@@ -85,6 +91,12 @@
 2. 다음 거래일: 60% 확률로 **정리매매**(-55~80%), 40%는 지정 해제
 3. 장 마감 후 **상장폐지** — 현물 보유분 0원, 레버리지 포지션은 마지막 가격으로 정산 (숏은 수익)
 
+### 대폭락장 / 대호황장
+- 게임 3일차부터 매일 약 3.5% 확률로 대폭락장, 3.5% 확률로 대호황장이 예약됩니다 (한 번 발생하면 최소 5일 쉼).
+- 발생 시 전 종목이 몇 시간에 걸쳐 크게 움직입니다 — 주식 ±10~24%, 코인 ±22~42% (종목 민감도에 비례).
+- 1~2일 지속, 변동성 1.8배(폭락) / 1.45배(호황). 다음 날 09:00에 2차 파동, 끝나면 반등 또는 숨 고르기.
+- 화면 중앙 경보 배너, 상단 상태 표시줄과 깜빡이는 띠로 진행 중임을 알려줍니다.
+
 ### 승패
 - **BUY**: 총자산 10억 원 달성 (계속 플레이 가능)
 - **DIE**: 열린 포지션 없이 총자산 1만 원 미만 → 저장 기록 삭제
@@ -98,10 +110,16 @@ Assets/
 ├─ Scenes/
 │  ├─ Title.unity          # 타이틀 (시작 화면)
 │  └─ MainGame.unity       # 메인 게임
-├─ Resources/Fonts/        # 나눔고딕 (OFL)
+├─ Resources/
+│  ├─ Fonts/               # 나눔고딕 (OFL)
+│  ├─ Audio/BGM_Calm.ogg   # 배경음악 (자체 제작, 56초 루프)
+│  ├─ Forld Logo New 2.png # 회사 로고
+│  └─ Game Logo.png        # 게임 로고
+├─ WebGLTemplates/ForldENT/ # 웹 로딩 화면 템플릿
 └─ Scripts/
    ├─ GameManager.cs       # 진행 총괄: 시작 방식, 배속, 저장, 승패, 알림
    ├─ Sfx.cs               # 코드로 합성하는 효과음
+   ├─ MusicPlayer.cs       # 배경음악 (씬 전환에도 이어서 재생)
    ├─ Core/
    │  ├─ MarketData.cs     # 종목 / 캔들 / 뉴스 데이터 구조
    │  ├─ AssetCatalog.cs   # 종목 200개 목록
@@ -117,9 +135,10 @@ Assets/
       ├─ WatchlistView.cs  # 관심종목 (가상 스크롤)
       ├─ OrderView.cs      # 주문창
       ├─ PortfolioView.cs  # 보유 / 포지션 / 거래 내역 표
+      ├─ TradeHistoryWindow.cs # 전체 거래 내역 창 (필터, 통계)
       ├─ NewsView.cs       # 뉴스 피드
       ├─ TutorialOverlay.cs# 새 게임 튜토리얼
-      ├─ TitleUI.cs        # 타이틀 화면
+      ├─ TitleUI.cs        # 로고 인트로 + 타이틀 화면
       └─ SceneFader.cs     # 씬 전환 페이드
 ```
 
@@ -135,6 +154,8 @@ Assets/
 | 시작 자금, 수수료, 유지 증거금 | `Portfolio.cs` `StartCash` · `FeeRate` · `MaintRate` |
 | 승리 / 파산 기준 | `GameManager.cs` `GoalEquity` · `DieEquity` |
 | 하루 뉴스 개수 | `MarketEngine.cs` `NewsPerDay` |
+| 대폭락 / 대호황 확률 | `MarketEngine.cs` `CrashChance` · `BoomChance` |
+| 저장되는 거래 기록 수 | `Portfolio.cs` `MaxLogs` |
 | 종목 추가·수정 | `AssetCatalog.cs` — `이름\|티커\|섹터\|시작가\|1분 변동성\|시장 민감도` |
 | 뉴스 추가·수정 | `NewsCatalog.cs` — `{0}` 자리에 종목 이름이 들어감 |
 | 색상 | `UIKit.cs` `Theme` |
@@ -145,7 +166,8 @@ Assets/
 
 - PlayerPrefs 키 `bod_save_v2` 에 JSON으로 저장됩니다.
 - 최고 기록: `bod_best_equity`, `bod_best_day`
-- 설정: `set_volume`, `set_greenup`, `set_speed`, `set_autosave`, `set_alerts`
+- 설정: `set_volume`, `set_music`, `set_greenup`, `set_speed`, `set_autosave`, `set_alerts`
+- 거래 기록은 최근 1,000건이 세이브에 함께 저장됩니다 (세이브 전체 약 200KB).
 - 타이틀 → 설정 → **저장 데이터 삭제** 로 초기화할 수 있습니다.
 
 ---
@@ -154,4 +176,5 @@ Assets/
 
 - 개발: **ForldENT**
 - 폰트: [나눔고딕](https://hangeul.naver.com/font) — SIL Open Font License 1.1 (재배포 가능)
+- 배경음악: 프로젝트 전용으로 코드로 합성한 곡 (저작권 문제 없음)
 - 게임 속 모든 종목·코인·뉴스는 실존 대상을 패러디한 **가상의 이름과 사건**이며, 실제 투자 정보가 아닙니다.

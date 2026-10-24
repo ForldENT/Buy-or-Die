@@ -48,7 +48,7 @@ namespace BuyOrDie
         readonly List<TextMeshProUGUI> heads = new List<TextMeshProUGUI>();
         readonly List<Row> rows = new List<Row>();
         TextMeshProUGUI empty, more;
-        UIButton closeAll;
+        UIButton closeAll, historyBtn;
         int tab;
         float lastWidth = -1;
 
@@ -65,6 +65,8 @@ namespace BuyOrDie
             closeAll = UI.Button(area, "전체 포지션 청산", 12, () => gm.CloseAllPositions(),
                 Theme.A(Theme.Liq, 0.12f), Theme.A(Theme.Liq, 0.2f), Theme.A(Theme.Liq, 0.28f), Theme.Liq);
             closeAll.rectTransform().AtRight(PadX, 9, 130, 28);
+            historyBtn = UI.SolidButton(area, "전체 내역 보기  ›", 12, () => gm.OpenHistory());
+            historyBtn.rectTransform().AtRight(PadX, 9, 130, 28);
             more = UI.Txt(area, "", 12, Theme.Dim, false, TextAlignmentOptions.MidlineRight);
             more.rectTransform.AtRight(PadX + 140, 9, 200, 28);
             UI.HLine(area, HeaderH);
@@ -148,6 +150,7 @@ namespace BuyOrDie
             tabs.SetLabel(0, "보유 자산" + (pf.holdingList.Count > 0 ? Fmt.Colored("  " + pf.holdingList.Count, Theme.Sub) : ""));
             tabs.SetLabel(1, "레버리지 포지션" + (pf.positions.Count > 0 ? Fmt.Colored("  " + pf.positions.Count, Theme.Accent) : ""));
             closeAll.gameObject.SetActive(tab == 1 && pf.positions.Count > 0);
+            historyBtn.gameObject.SetActive(tab == 2);
 
             int count = tab == 0 ? pf.holdingList.Count : (tab == 1 ? pf.positions.Count : pf.logs.Count);
             empty.gameObject.SetActive(count == 0);

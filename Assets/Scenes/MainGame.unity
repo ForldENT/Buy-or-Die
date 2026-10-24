@@ -364,8 +364,9 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 4e381b7649cfd044fbc2fd5264e3ae8b, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::BuyOrDie.GameManager
-  secondsPerMinuteOpen: 0.25
-  secondsPerMinuteClosed: 0.06
+  secondsPerMinuteOpen: 0.5
+  secondsPerMinuteClosed: 0.12
+  secondsPerMinuteWeekend: 0.06
   state: 0
   speedIndex: 1
   goalReached: 0

@@ -20,11 +20,11 @@ namespace BuyOrDie
         public static readonly int[] Speeds = { 0, 1, 2, 5 };
 
         [Tooltip("주식 장이 열려 있을 때 게임 1분이 현실 몇 초인지 (1배속)")]
-        public float secondsPerMinuteOpen = 0.25f;
+        public float secondsPerMinuteOpen = 0.5f;
         [Tooltip("평일 장 마감 시간대 (코인만 거래)")]
-        public float secondsPerMinuteClosed = 0.06f;
+        public float secondsPerMinuteClosed = 0.12f;
         [Tooltip("주말 (주식 휴장)")]
-        public float secondsPerMinuteWeekend = 0.03f;
+        public float secondsPerMinuteWeekend = 0.06f;
 
         public MarketEngine engine;
         public Portfolio portfolio;
@@ -65,6 +65,7 @@ namespace BuyOrDie
             Application.targetFrameRate = 60;
             Application.runInBackground = true;
             sfx = Sfx.I;
+            MusicPlayer.Play();
 
             bool loaded = false;
             if (GameLaunch.mode == LaunchMode.Load)
@@ -114,6 +115,7 @@ namespace BuyOrDie
             engine.DayStarted += OnDayStarted;
             engine.PriceLimitHit += OnPriceLimit;
             engine.AssetDelisted += OnDelisted;
+            engine.RegimeChanged += OnRegimeChanged;
         }
 
         void NewMarket()
@@ -431,6 +433,23 @@ namespace BuyOrDie
             ui.watchlist.Rebind();
         }
 
+        void OnRegimeChanged(int r)
+        {
+            if (r != 0)
+            {
+                if (r < 0) sfx.Liquidated(); else sfx.Win();
+                ui.ShowRegimeAlert(r);
+            }
+            else
+            {
+                sfx.News();
+                Toast("시장 정상화", "대폭락장 / 대호황장이 끝났어요. 변동성이 평소 수준으로 돌아옵니다.", Theme.Accent);
+                ui.RefreshTaskbar();
+            }
+        }
+
+        public void OpenHistory() { ui.OpenHistory(); }
+
         public void Toast(string title, string body, Color c)
         {
             if (ui != null) ui.Toast(title, body, c);
@@ -472,6 +491,7 @@ namespace BuyOrDie
             if (kb.upArrowKey.wasPressedThisFrame) ui.watchlist.SelectRelative(-1);
             if (kb.downArrowKey.wasPressedThisFrame) ui.watchlist.SelectRelative(1);
             if (kb.tabKey.wasPressedThisFrame) ui.watchlist.CycleTab();
+            if (kb.hKey.wasPressedThisFrame) ui.OpenHistory();
         }
     }
 }

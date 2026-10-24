@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>{{{ PRODUCT_NAME }}}</title>
+    <link rel="icon" type="image/png" sizes="32x32" href="TemplateData/icon-32.png">
+    <link rel="apple-touch-icon" href="TemplateData/icon-192.png">
+    <link rel="stylesheet" href="TemplateData/style.css">
+#if SHOW_DIAGNOSTICS
+    <link rel="stylesheet" href="<<<TemplateData/diagnostics.css>>>">
+    <script src="<<<TemplateData/diagnostics.js>>>"></script>
+#endif
+#if DEVELOPMENT_PLAYER
+    <script src="<<<TemplateData/profiler.js>>>"></script>
+#endif
+  </head>
+  <body>
+    <div id="stage">
+      <canvas id="unity-canvas" width={{{ WIDTH }}} height={{{ HEIGHT }}} tabindex="-1"></canvas>
+      <div id="loader">
+        <img id="loader-logo" src="TemplateData/forld-logo.png" alt="FORLD">
+        <div id="loader-track"><div id="loader-fill"></div></div>
+        <div id="loader-text">불러오는 중 <span id="loader-pct">0%</span></div>
+      </div>
+      <button id="fullscreen" title="전체 화면" aria-label="전체 화면">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>
+      </button>
+      <div id="warning"></div>
+    </div>
+    <script>
+      var canvas = document.querySelector("#unity-canvas");
+      var ASPECT = {{{ WIDTH }}} / {{{ HEIGHT }}};
+
+      // 브라우저 창 크기에 맞춰 16:9 비율을 유지하며 최대로 채운다
+      function fit() {
+        var w = window.innerWidth, h = window.innerHeight;
+        if (w / h > ASPECT) w = h * ASPECT; else h = w / ASPECT;
+        canvas.style.width = Math.floor(w) + "px";
+        canvas.style.height = Math.floor(h) + "px";
+      }
+      window.addEventListener("resize", fit);
+      fit();
+
+      function unityShowBanner(msg, type) {
+        var box = document.querySelector("#warning");
+        var div = document.createElement("div");
+        div.className = "msg " + (type || "info");
+        div.innerHTML = msg;
+        box.appendChild(div);
+        if (type != "error") setTimeout(function () { box.removeChild(div); }, 5000);
+      }
+
+      var buildUrl = "Build";
+      var loaderUrl = buildUrl + "/{{{ LOADER_FILENAME }}}";
+      var config = {
+        arguments: [],
+        dataUrl: buildUrl + "/{{{ DATA_FILENAME }}}",
+        frameworkUrl: buildUrl + "/{{{ FRAMEWORK_FILENAME }}}",
+#if USE_THREADS
+        workerUrl: buildUrl + "/{{{ WORKER_FILENAME }}}",
+#endif
+#if USE_WASM
+        codeUrl: buildUrl + "/{{{ CODE_FILENAME }}}",
+#endif
+#if SYMBOLS_FILENAME
+        symbolsUrl: buildUrl + "/{{{ SYMBOLS_FILENAME }}}",
+#endif
+        streamingAssetsUrl: "StreamingAssets",
+        companyName: {{{ JSON.stringify(COMPANY_NAME) }}},
+        productName: {{{ JSON.stringify(PRODUCT_NAME) }}},
+        productVersion: {{{ JSON.stringify(PRODUCT_VERSION) }}},
+        showBanner: unityShowBanner,
+      };
+
+      var fill = document.querySelector("#loader-fill");
+      var pct = document.querySelector("#loader-pct");
+      var script = document.createElement("script");
+      script.src = loaderUrl;
+      script.onload = function () {
+        createUnityInstance(canvas, config, function (progress) {
+          fill.style.width = (100 * progress) + "%";
+          pct.textContent = Math.round(100 * progress) + "%";
+        }).then(function (unityInstance) {
+          var loader = document.querySelector("#loader");
+          loader.classList.add("done");
+          setTimeout(function () { loader.style.display = "none"; }, 600);
+          document.querySelector("#fullscreen").onclick = function () { unityInstance.SetFullscreen(1); };
+        }).catch(function (message) {
+          unityShowBanner(message, "error");
+        });
+      };
+      document.body.appendChild(script);
+    </script>
+  </body>
+</html>

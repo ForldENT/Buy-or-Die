@@ -156,6 +156,13 @@ namespace BuyOrDie
             vol.Select(vi, false);
             y += 64;
 
+            Row(c, "배경음악", "잔잔한 BGM 볼륨", y);
+            int mi = 0;
+            for (int i = 0; i < Volumes.Length; i++) if (Mathf.Abs(Volumes[i] - Settings.MusicVolume) < 0.13f) mi = i;
+            var mus = new Segmented(c, new[] { "끔", "25", "50", "75", "100" }, cx, y, cw, 38, 13, i => Settings.MusicVolume = Volumes[i]);
+            mus.Select(mi, false);
+            y += 64;
+
             Row(c, "상승 / 하락 색", "국내식: 상승 빨강 · 하락 파랑", y);
             var col = new Segmented(c, new[] { "국내식  ▲빨강 ▼파랑", "해외식  ▲초록 ▼빨강" }, cx, y, cw, 38, 13, i => Settings.GreenUp = i == 1);
             col.Select(Settings.GreenUp ? 1 : 0, false);

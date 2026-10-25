@@ -530,6 +530,7 @@ namespace BuyOrDie
 
         void Update()
         {
+            ClickTuning.Apply();
             UpdateClock();
             float dt = Time.unscaledDeltaTime;
 

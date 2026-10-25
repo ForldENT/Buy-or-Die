@@ -51,6 +51,8 @@ namespace BuyOrDie
                 tab = i;
                 scroll.verticalNormalizedPosition = 1;
                 Rebind();
+                // 키보드 Tab 키와 똑같이: 지금 종목이 이 탭에 없으면 탭의 첫 종목을 선택
+                if (items.Count > 0 && !items.Contains(gm.selected)) SelectRelative(0);
             });
             UI.HLine(area, 44);
 

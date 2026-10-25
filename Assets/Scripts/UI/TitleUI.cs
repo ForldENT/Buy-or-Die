@@ -422,6 +422,7 @@ namespace BuyOrDie
 
         void Update()
         {
+            ClickTuning.Apply();
             float dt = Time.unscaledDeltaTime;
             var now = DateTime.Now;
             clockT.text = now.ToString("HH:mm");

@@ -17,6 +17,7 @@ namespace BuyOrDie
             public Func<RectTransform> target;
             public string title, body, actionHint;
             public Func<bool> waitFor;
+            public Func<string> hintFn;   // 상황에 따라 바뀌는 안내 (null 반환 시 기본 안내)
             public Action onEnter;
         }
 
@@ -47,9 +48,14 @@ namespace BuyOrDie
                 "총자산 · 현금 · 현물 평가손익 · 레버리지 손익이 실시간으로 바뀌어요. 오른쪽 끝은 투자자 등급(개미 → 월가의 늑대)이에요.");
             Add(() => ui.marketStripRT, "시간이 흐르는 게 보여요",
                 "국내장은 평일 09:00~15:30, 해외장은 22:30~05:00(한국 시간). 맨 아래 줄은 오늘 하루가 얼마나 지났는지예요.\n주말엔 주식이 쉬고 코인만 24시간 움직여요.");
-            Add(() => ui.watchlistRT, "종목 고르기",
+            MarketAsset pickStart = null;
+            var pickStep = Add(() => ui.watchlistRT, "종목 고르기",
                 "처음엔 국내 50 · 해외 50 · 코인 100개, 매일 새 종목이 상장돼요.\n위쪽 '코인' 탭(또는 Tab 키)을 누르면 첫 코인이 선택돼요. 목록에서 다른 코인을 골라도 돼요. 고르면 자동으로 넘어가요.",
-                () => gm.selected != null && gm.selected.IsCoin, "코인을 하나 선택해 보세요");
+                () => gm.selected != null && gm.selected.IsCoin, "'코인' 탭을 누르거나 코인을 하나 선택해 보세요");
+            pickStep.onEnter = () => pickStart = gm.selected;
+            // 주식을 고르면 반응이 없는 것처럼 보이므로, 왜 코인이어야 하는지 바로 알려준다
+            pickStep.hintFn = () => gm.selected != null && !gm.selected.IsCoin && gm.selected != pickStart
+                ? "주식은 지금 장이 닫혀 있어요.\n24시간 거래되는 코인을 골라주세요" : null;
             Add(() => ui.chartRT, "차트 읽기",
                 "빨간 캔들은 상승, 파란 캔들은 하락이에요. 마우스를 올리면 그 시점의 가격이 보이고, 오른쪽 위에서 1분 ~ 1시간 봉을 바꿀 수 있어요.");
             var buyStep = Add(() => ui.orderRT, "첫 매수",
@@ -191,7 +197,8 @@ namespace BuyOrDie
             {
                 next.gameObject.SetActive(ok);
                 hintT.gameObject.SetActive(!ok);
-                hintT.text = !ok ? s.actionHint + "  →" : "";
+                string h = s.hintFn != null ? s.hintFn() : null;
+                hintT.text = !ok ? (h ?? s.actionHint) + "  →" : "";
             }
             float pulse = 0.55f + 0.45f * Mathf.Abs(Mathf.Sin(Time.unscaledTime * 2.4f));
             foreach (var e in edges) e.color = Theme.A(Theme.Accent, ok ? 0.9f : pulse);
